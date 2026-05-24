@@ -1,0 +1,153 @@
+// This is your Prisma schema file
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  FACULTY
+  ADMIN
+}
+
+enum ArtifactType {
+  PROPOSAL
+  SRS
+  SDD
+  SPMP
+  STD
+  SOURCE_CODE
+}
+
+enum TraceStatus {
+  PASS
+  WARN
+  FAIL
+}
+
+enum Severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ReadinessStatus {
+  READY
+  NEEDS_REVISION
+  CRITICAL_GAPS
+}
+
+enum ExportFormat {
+  PDF
+  JSON
+  CSV
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  role      Role     @default(STUDENT)
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  facultyGroups  FacultyGroup[] @relation("FacultyAdvisor")
+  memberOf       FacultyGroup[] @relation("GroupMembers")
+  exportJobs     ExportJob[]
+}
+
+model FacultyGroup {
+  id          String   @id @default(uuid())
+  name        String
+  teamCode    String   @unique
+  projectTitle String
+  advisorId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  advisor     User          @relation("FacultyAdvisor", fields: [advisorId], references: [id])
+  members     User[]        @relation("GroupMembers")
+  artifacts   Artifact[]
+  auditResults AuditResult[]
+}
+
+model Artifact {
+  id          String       @id @default(uuid())
+  groupId     String
+  type        ArtifactType
+  url         String
+  content     String?      // extracted text for AI traceability analysis
+  fileName    String?
+  uploadedAt  DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  group            FacultyGroup       @relation(fields: [groupId], references: [id])
+  upstreamLinks    TraceabilityLink[] @relation("UpstreamArtifact")
+  downstreamLinks  TraceabilityLink[] @relation("DownstreamArtifact")
+
+  @@unique([groupId, type])
+}
+
+model TraceabilityLink {
+  id             String      @id @default(uuid())
+  upstreamId     String
+  downstreamId   String
+  alignmentScore Float
+  status         TraceStatus
+  evidencePairs  Json        // array of { upstream, downstream, similarity }
+  auditResultId  String?
+  createdAt      DateTime    @default(now())
+
+  upstream      Artifact     @relation("UpstreamArtifact", fields: [upstreamId], references: [id])
+  downstream    Artifact     @relation("DownstreamArtifact", fields: [downstreamId], references: [id])
+  auditResult   AuditResult? @relation(fields: [auditResultId], references: [id])
+}
+
+model AuditResult {
+  id              String          @id @default(uuid())
+  groupId         String
+  overallScore    Float
+  readinessStatus ReadinessStatus
+  auditedAt       DateTime        @default(now())
+
+  group           FacultyGroup       @relation(fields: [groupId], references: [id])
+  traceLinks      TraceabilityLink[]
+  gaps            Gap[]
+  exportJobs      ExportJob[]
+}
+
+model Gap {
+  id               String      @id @default(uuid())
+  auditResultId    String
+  description      String
+  severity         Severity
+  affectedArtifacts ArtifactType[]
+  rootCause        String
+  recommendation   String
+  aiConfidence     Float
+  resolvedAt       DateTime?
+  createdAt        DateTime    @default(now())
+
+  auditResult      AuditResult @relation(fields: [auditResultId], references: [id])
+}
+
+model ExportJob {
+  id            String       @id @default(uuid())
+  userId        String
+  auditResultId String
+  format        ExportFormat
+  fileUrl       String?
+  status        String       @default("PENDING")
+  createdAt     DateTime     @default(now())
+  completedAt   DateTime?
+
+  user          User         @relation(fields: [userId], references: [id])
+  auditResult   AuditResult  @relation(fields: [auditResultId], references: [id])
+}
