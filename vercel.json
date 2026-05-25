@@ -1,31 +1,15 @@
 {
   "version": 2,
-  "buildCommand": "npm run build",
-  "outputDirectory": "frontend/dist",
   "public": false,
-  "projects": {
+  "experimentalServices": {
     "frontend": {
       "root": "frontend",
-      "source": "src",
-      "buildCommand": "npm run build",
-      "outputDirectory": "dist"
+      "framework": "vite",
+      "routePrefix": "/"
     },
     "backend": {
       "root": "backend",
-      "source": "src",
-      "buildCommand": "npm run build",
-      "outputDirectory": "dist"
-    },
-    "ai-service": {
-      "root": "ai-service",
-      "buildCommand": "pip install -r requirements.txt",
-      "runtimeVersion": "3.11"
+      "routePrefix": "/api"
     }
-  },
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "/api/$1"
-    }
-  ]
+  }
 }
