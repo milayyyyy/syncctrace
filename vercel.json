@@ -9,7 +9,8 @@
     },
     "backend": {
       "root": "backend",
-      "routePrefix": "/api"
+      "routePrefix": "/api",
+      "entrypoint": "dist/index.js"
     }
   }
 }
