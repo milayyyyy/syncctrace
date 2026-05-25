@@ -33,7 +33,9 @@ artifactsRouter.post('/', async (req: AuthRequest, res: Response): Promise<void>
       artifacts.map(({ type, url, content, fileName }) =>
         prisma.artifact.upsert({
           where: { groupId_type: { groupId, type } },
-          update: { url, ...(content !== undefined && { content }), ...(fileName !== undefined && { fileName }) },
+          // Always reset content when a URL-only save comes in so the next audit
+          // re-extracts text from the new URL instead of using stale content.
+          update: { url, content: content ?? null, ...(fileName !== undefined && { fileName }) },
           create: { groupId, type, url, content, fileName },
         }),
       ),

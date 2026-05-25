@@ -10,9 +10,16 @@ export const AuthCallbackPage: React.FC = () => {
     initFromSession().then(() => {
       const state = useAuthStore.getState();
       if (state.isAuthenticated) {
-        navigate(state.user?.role === 'FACULTY' ? '/faculty' : '/setup', { replace: true });
+        if (state.user?.role === 'FACULTY') {
+          navigate('/faculty', { replace: true });
+        } else if (state.groupId) {
+          // Existing student with workspaces → dashboard
+          navigate('/dashboard', { replace: true });
+        } else {
+          // New student with no workspaces → setup
+          navigate('/setup', { replace: true });
+        }
       } else {
-        // initFromSession resolved without authenticating (e.g. 404 or role mismatch)
         navigate(state.authRedirectTo || '/login', { replace: true });
       }
     });

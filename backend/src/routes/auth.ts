@@ -1,10 +1,20 @@
 import { Router, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
+import rateLimit from 'express-rate-limit';
 import { authenticate, AuthRequest } from '../middleware/auth';
 
 const prisma = new PrismaClient();
 export const authRouter = Router();
+
+// Stricter rate limit for auth mutation endpoints (sync/signup)
+const authMutationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many auth requests. Please wait before trying again.' },
+});
 
 const SyncSchema = z.object({
   role: z.enum(['STUDENT', 'FACULTY']),
@@ -13,7 +23,7 @@ const SyncSchema = z.object({
 });
 
 // POST /api/auth/sync — verify Supabase JWT, upsert user in DB, return profile
-authRouter.post('/sync', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+authRouter.post('/sync', authMutationLimiter, authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = SyncSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });

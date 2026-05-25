@@ -2,6 +2,8 @@ import { Router, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { analyzeTraceability } from '../services/openai';
+import mammoth from 'mammoth';
+import pdfParse from 'pdf-parse';
 
 const prisma = new PrismaClient();
 
@@ -17,22 +19,146 @@ const TRACE_PAIRS: [string, string][] = [
   ['SDD', 'SOURCE_CODE'],
 ];
 
+/** Extract plain text from a PDF buffer using pdf-parse. */
+async function extractPdfText(buffer: Buffer): Promise<string | null> {
+  try {
+    const data = await pdfParse(buffer);
+    const text = data.text.trim();
+    return text.length > 50 ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Try to export a file ID from Google as plain text.
+ * Handles native Google Docs (export API) and uploaded Word docs (mammoth).
+ */
+async function tryGoogleExport(fileId: string): Promise<string | null> {
+  // Attempt 1: Native Google Docs text export
+  try {
+    const exportUrl = `https://docs.google.com/document/d/${fileId}/export?format=txt`;
+    const res = await fetch(exportUrl, { redirect: 'follow', signal: AbortSignal.timeout(20000) });
+    if (res.ok) {
+      const contentType = res.headers.get('content-type') ?? '';
+      // Reject HTML responses — those are login/error pages, not actual doc content
+      if (!contentType.includes('text/html')) {
+        const text = await res.text();
+        if (text.trim().length > 50) return text.trim();
+      }
+    }
+  } catch { /* ignore */ }
+
+  // Attempt 2: Alternative Google feeds export endpoint
+  try {
+    const feedsUrl = `https://docs.google.com/feeds/download/documents/export/Export?id=${fileId}&exportFormat=txt`;
+    const res = await fetch(feedsUrl, { redirect: 'follow', signal: AbortSignal.timeout(20000) });
+    if (res.ok) {
+      const contentType = res.headers.get('content-type') ?? '';
+      if (!contentType.includes('text/html')) {
+        const text = await res.text();
+        if (text.trim().length > 50) return text.trim();
+      }
+    }
+  } catch { /* ignore */ }
+
+  // Attempt 3: Direct Drive download — handles PDFs, uploaded .docx files via mammoth
+  try {
+    const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`;
+    const res = await fetch(downloadUrl, { redirect: 'follow', signal: AbortSignal.timeout(30000) });
+    if (res.ok) {
+      const contentType = res.headers.get('content-type') ?? '';
+
+      if (contentType.includes('text/plain')) {
+        const text = await res.text();
+        if (text.trim().length > 50) return text.trim();
+      }
+
+      // PDF file — extract text with pdf-parse
+      if (contentType.includes('application/pdf')) {
+        const buffer = Buffer.from(await res.arrayBuffer());
+        const text = await extractPdfText(buffer);
+        if (text) return text;
+      }
+
+      // Word document — parse with mammoth
+      if (
+        contentType.includes('wordprocessingml') ||
+        contentType.includes('msword')
+      ) {
+        const buffer = Buffer.from(await res.arrayBuffer());
+        try {
+          const { value } = await mammoth.extractRawText({ buffer });
+          if (value.trim().length > 50) return value.trim();
+        } catch { /* not a valid DOCX */ }
+      }
+
+      // Unknown binary — try PDF first, then DOCX
+      if (contentType.includes('octet-stream')) {
+        const buffer = Buffer.from(await res.arrayBuffer());
+        const pdfText = await extractPdfText(buffer);
+        if (pdfText) return pdfText;
+        try {
+          const { value } = await mammoth.extractRawText({ buffer });
+          if (value.trim().length > 50) return value.trim();
+        } catch { /* not a valid DOCX */ }
+      }
+
+      // HTML confirmation/virus-scan page from Google — follow confirm token
+      if (contentType.includes('text/html')) {
+        const html = await res.text();
+        const confirmMatch = /[?&]confirm=([0-9A-Za-z_-]+)/.exec(html)
+          ?? /name="confirm"\s+value="([^"]+)"/.exec(html);
+        if (confirmMatch) {
+          const confirmRes = await fetch(
+            `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=${confirmMatch[1]}`,
+            { redirect: 'follow', signal: AbortSignal.timeout(30000) },
+          );
+          if (confirmRes.ok) {
+            const confirmType = confirmRes.headers.get('content-type') ?? '';
+            if (confirmType.includes('application/pdf')) {
+              const buffer = Buffer.from(await confirmRes.arrayBuffer());
+              const text = await extractPdfText(buffer);
+              if (text) return text;
+            }
+            if (confirmType.includes('wordprocessingml') || confirmType.includes('octet-stream')) {
+              const buffer = Buffer.from(await confirmRes.arrayBuffer());
+              try {
+                const { value } = await mammoth.extractRawText({ buffer });
+                if (value.trim().length > 50) return value.trim();
+              } catch { /* not a valid DOCX */ }
+            }
+          }
+        }
+      }
+    }
+  } catch { /* ignore */ }
+
+  return null;
+}
+
 /**
  * Extract plain text from a document URL.
- * Supports Google Docs (export as txt) and GitHub repos (README).
+ * Supports Google Docs, Google Drive file links, and GitHub repos (README).
  */
 async function extractContent(url: string): Promise<string | null> {
   try {
-    // Google Docs
+    // Google Docs native URL: docs.google.com/document/d/{id}
     const gdocsMatch = /\/document\/d\/([a-zA-Z0-9_-]+)/.exec(url);
     if (gdocsMatch) {
-      const docId = gdocsMatch[1];
-      const exportUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
-      const res = await fetch(exportUrl, { signal: AbortSignal.timeout(20000) });
-      if (res.ok) {
-        const text = await res.text();
-        return text.trim() || null;
-      }
+      return await tryGoogleExport(gdocsMatch[1]);
+    }
+
+    // Google Drive shared file URL: drive.google.com/file/d/{id}/view
+    const gdriveMatch = /drive\.google\.com\/(?:file\/d\/|open\?id=)([a-zA-Z0-9_-]+)/.exec(url);
+    if (gdriveMatch) {
+      return await tryGoogleExport(gdriveMatch[1]);
+    }
+
+    // drive.google.com/uc?id={id} or uc?export=...&id={id}
+    const gdriveUcMatch = /[?&]id=([a-zA-Z0-9_-]+)/.exec(url);
+    if (url.includes('drive.google.com') && gdriveUcMatch) {
+      return await tryGoogleExport(gdriveUcMatch[1]);
     }
 
     // GitHub repo URL
@@ -89,40 +215,136 @@ auditRouter.post('/:groupId', async (req: AuthRequest, res: Response): Promise<v
 
     const artifactsWithContent = artifacts.filter(a => a.content);
     if (artifactsWithContent.length < 2) {
+      const missing = artifacts.filter(a => !a.content).map(a => a.type);
       res.status(400).json({
-        error: 'Could not extract text from the submitted document URLs. Ensure Google Docs are shared publicly (Anyone with the link can view) and GitHub repos are public.',
+        error: 'Insufficient text content extracted.',
+        details: `Could not extract text from: ${missing.join(', ')}. Ensure Google Docs are 'Anyone with the link can view' and GitHub repos are public.`
       });
       return;
     }
 
     const byType = Object.fromEntries(artifactsWithContent.map(a => [a.type, a]));
 
-    interface LinkResult {
+    interface AnalysisWork {
       up: (typeof artifacts)[0];
       down: (typeof artifacts)[0];
-      analysis: Awaited<ReturnType<typeof analyzeTraceability>>;
+      reusedData?: {
+        alignmentScore: number;
+        status: any;
+        evidencePairs: any;
+        gaps: any[];
+      };
     }
-    const linkResults: LinkResult[] = [];
+    const plan: AnalysisWork[] = [];
 
+    // Identify which pairs need new analysis vs reuse
     for (const [upType, downType] of TRACE_PAIRS) {
       const up = byType[upType];
       const down = byType[downType];
       if (!up?.content || !down?.content) continue;
 
-      const analysis = await analyzeTraceability(
-        { id: up.id, type: up.type, content: up.content },
-        { id: down.id, type: down.type, content: down.content },
-      );
-      linkResults.push({ up, down, analysis });
+      // Look for the most recent link for this EXACT pair of artifacts
+      const latestLink = await prisma.traceabilityLink.findFirst({
+        where: {
+          upstreamId: up.id,
+          downstreamId: down.id,
+        },
+        orderBy: { createdAt: 'desc' },
+        include: { auditResult: { include: { gaps: true } } }
+      });
+
+      // A link is fresh if it was created AFTER both artifacts were last updated
+      const isFresh = latestLink && 
+        new Date(latestLink.createdAt) > new Date(up.updatedAt) && 
+        new Date(latestLink.createdAt) > new Date(down.updatedAt);
+
+      if (isFresh) {
+        // Find gaps belonging to this specific link in that audit
+        const relevantGaps = latestLink.auditResult?.gaps.filter(g => 
+          g.affectedArtifacts.includes(up.type as any) && 
+          g.affectedArtifacts.includes(down.type as any)
+        ) || [];
+
+        plan.push({
+          up, down,
+          reusedData: {
+            alignmentScore: latestLink.alignmentScore,
+            status: latestLink.status,
+            evidencePairs: latestLink.evidencePairs,
+            gaps: relevantGaps.map(g => ({
+              description: g.description,
+              severity: g.severity,
+              rootCause: g.rootCause,
+              recommendation: g.recommendation,
+              aiConfidence: g.aiConfidence
+            }))
+          }
+        });
+      } else {
+        plan.push({ up, down });
+      }
     }
 
-    if (linkResults.length === 0) {
-      res.status(400).json({ error: 'No valid artifact pairs found for analysis.' });
+    if (plan.length === 0) {
+      res.status(400).json({ 
+        error: 'No valid sequential pairs found.', 
+        details: 'Traceability follows a specific sequence (e.g., Proposal → SRS, SRS → SDD). To run analysis, ensure you have adjacent artifacts from the project lifecycle.'
+      });
       return;
     }
 
+    // Execute analysis sequentially to stay within Groq free-tier TPM (12k/min).
+    // Each call uses ~1,500 tokens; a 10-second gap keeps burst usage under the limit.
+    // On 429 rate-limit errors, wait 30 s then retry once.
+    async function analyzeWithRetry(
+      up: (typeof artifacts)[0],
+      down: (typeof artifacts)[0],
+      attempt = 1
+    ): Promise<any> {
+      const call = () => {
+        console.log(`[AI] [Attempt ${attempt}] Starting analysis: ${up.type} ➔ ${down.type} (${up.content!.length + down.content!.length} chars)`);
+        return analyzeTraceability(
+          { id: up.id, type: up.type, content: up.content! },
+          { id: down.id, type: down.type, content: down.content! },
+        );
+      };
+      try {
+        const result = await call();
+        console.log(`[AI] COMPLETED: ${up.type} ➔ ${down.type}`);
+        return result;
+      } catch (err: unknown) {
+        const status = (err as { status?: number }).status;
+        console.error(`[AI] ERROR (${status}) for ${up.type} ➔ ${down.type}:`, err);
+        
+        if (status === 429 && attempt < 3) {
+          const retryAfter = (err as any).error?.metadata?.retry_after_seconds || (30 * attempt);
+          console.log(`[AI] Rate limited (429). Waiting ${retryAfter}s before retry ${attempt + 1}/3...`);
+          await new Promise(r => setTimeout(r, (retryAfter + 5) * 1000));
+          return await analyzeWithRetry(up, down, attempt + 1);
+        }
+        throw err;
+      }
+    }
+
+    // Execute analysis sequentially to stay within OpenRouter free-tier rate limits.
+    // Parallel calls (Promise.all) often trigger 429 errors on free models.
+    const finalResults: Array<(typeof plan)[0] & { analysis: Awaited<ReturnType<typeof analyzeTraceability>> }> = [];
+    for (let i = 0; i < plan.length; i++) {
+      const item = plan[i];
+      if (item.reusedData) {
+        finalResults.push({ ...item, analysis: item.reusedData });
+        continue;
+      }
+      const analysis = await analyzeWithRetry(item.up, item.down);
+      finalResults.push({ ...item, analysis });
+      // 10-second gap between pairs to avoid triggering rate limits on subsequent calls
+      if (i < plan.length - 1) {
+        await new Promise(r => setTimeout(r, 10000));
+      }
+    }
+
     const overallScore =
-      linkResults.reduce((sum, r) => sum + r.analysis.alignmentScore, 0) / linkResults.length;
+      finalResults.reduce((sum, r) => sum + r.analysis.alignmentScore, 0) / finalResults.length;
     let readinessStatus: string;
     if (overallScore >= 80) readinessStatus = 'READY';
     else if (overallScore >= 60) readinessStatus = 'NEEDS_REVISION';
@@ -130,49 +352,51 @@ auditRouter.post('/:groupId', async (req: AuthRequest, res: Response): Promise<v
 
     const auditResult = await prisma.$transaction(async tx => {
       const audit = await tx.auditResult.create({
-        data: { groupId, overallScore, readinessStatus },
+        data: { groupId, overallScore, readinessStatus: readinessStatus as any },
       });
 
-      for (const { up, down, analysis } of linkResults) {
-        const link = await tx.traceabilityLink.create({
+      for (const { up, down, analysis } of finalResults) {
+        // Normalize status to uppercase for Prisma enum
+        const status = (analysis.status || 'FAIL').toUpperCase() as any;
+
+        await tx.traceabilityLink.create({
           data: {
             upstreamId: up.id,
             downstreamId: down.id,
             alignmentScore: analysis.alignmentScore,
-            status: analysis.status,
-            evidencePairs: analysis.evidencePairs,
+            status: ['PASS', 'WARN', 'FAIL'].includes(status) ? status : 'FAIL',
+            evidencePairs: analysis.evidencePairs as any,
             auditResultId: audit.id,
           },
         });
 
         for (const gap of analysis.gaps) {
+          // Ensure severity matches Prisma enum (uppercase)
+          const validSeverities = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+          const severity = (gap.severity || 'MEDIUM').toUpperCase();
+          const finalSeverity = validSeverities.includes(severity) ? severity : 'MEDIUM';
+
           await tx.gap.create({
             data: {
               auditResultId: audit.id,
-              description: gap.description,
-              severity: gap.severity,
+              description: gap.description || 'No description provided',
+              severity: finalSeverity as any,
               affectedArtifacts: [up.type, down.type],
-              rootCause: gap.rootCause,
-              recommendation: gap.recommendation,
-              aiConfidence: gap.aiConfidence,
+              rootCause: gap.rootCause || 'Root cause not determined by AI',
+              recommendation: gap.recommendation || 'No recommendation provided',
+              aiConfidence: typeof gap.aiConfidence === 'number' ? gap.aiConfidence : 0.5,
             },
           });
         }
-
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const _used = link.id;
       }
-
-      return tx.auditResult.findUniqueOrThrow({
-        where: { id: audit.id },
-        include: { traceLinks: true, gaps: true },
-      });
+      return audit;
     });
 
     res.status(201).json({ auditResult });
   } catch (err) {
     console.error('Audit error:', err);
-    res.status(500).json({ error: 'Audit failed. Check OPENAI_API_KEY and artifact content.' });
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: 'Audit failed.', details: message });
   }
 });
 
@@ -195,5 +419,24 @@ auditRouter.get('/:groupId/latest', async (req: AuthRequest, res: Response): Pro
   } catch (err) {
     console.error('Fetch audit error:', err);
     res.status(500).json({ error: 'Failed to fetch audit result.' });
+  }
+});
+
+// GET /api/audit/:groupId/debug — verify extraction: shows char count + preview per artifact
+auditRouter.get('/:groupId/debug', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { groupId } = req.params;
+  try {
+    const artifacts = await prisma.artifact.findMany({ where: { groupId } });
+    const info = artifacts.map(a => ({
+      type: a.type,
+      url: a.url,
+      extracted: !!a.content,
+      charCount: a.content?.length ?? 0,
+      approxPages: Math.round((a.content?.length ?? 0) / 1500),
+      preview: a.content?.slice(0, 300) ?? null,
+    }));
+    res.json({ artifacts: info });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
   }
 });

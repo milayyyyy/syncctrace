@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, GitBranch, Loader2, ExternalLink, Play, ChevronDown, Layers, Save, CheckCircle2, X } from 'lucide-react';
+import { FileText, GitBranch, Loader2, ExternalLink, Play, ChevronDown, Save, CheckCircle2, X, AlertCircle } from 'lucide-react';
 import { Layout } from '../components/shared/Layout';
-import { Card } from '../components/ui/Card';
-import { Button } from '../components/ui/Button';
-import { Badge } from '../components/ui/Badge';
 import { useNavigate } from 'react-router-dom';
 import type { ArtifactType } from '../types';
 import { api } from '../services/api';
@@ -22,42 +19,42 @@ const ARTIFACT_FIELDS: ArtifactField[] = [
     key: 'PROPOSAL',
     label: 'Project Proposal',
     placeholder: 'https://docs.google.com/document/d/…',
-    icon: <FileText size={16} />,
+    icon: <FileText />,
     description: 'Initial project proposal document',
   },
   {
     key: 'SRS',
     label: 'Software Requirements Specification',
     placeholder: 'https://docs.google.com/document/d/…',
-    icon: <FileText size={16} />,
+    icon: <FileText />,
     description: 'Functional and non-functional requirements',
   },
   {
     key: 'SDD',
     label: 'Software Design Document',
     placeholder: 'https://docs.google.com/document/d/…',
-    icon: <FileText size={16} />,
+    icon: <FileText />,
     description: 'System architecture and design decisions',
   },
   {
     key: 'SPMP',
     label: 'Software Project Management Plan',
     placeholder: 'https://docs.google.com/document/d/…',
-    icon: <FileText size={16} />,
+    icon: <FileText />,
     description: 'Project schedule, resources, and risk management',
   },
   {
     key: 'STD',
     label: 'Software Test Document',
     placeholder: 'https://docs.google.com/document/d/…',
-    icon: <FileText size={16} />,
+    icon: <FileText />,
     description: 'Test cases, plans, and expected results',
   },
   {
     key: 'SOURCE_CODE',
     label: 'GitHub Repository',
     placeholder: 'https://github.com/org/repository',
-    icon: <GitBranch size={16} />,
+    icon: <GitBranch />,
     description: 'Link to the project source code repository',
   },
 ];
@@ -71,6 +68,156 @@ const PREFILLED: Record<ArtifactType, string> = {
   SOURCE_CODE: 'https://github.com/team-synctrace/synctrace-app',
 };
 
+// Ordered processing pipeline steps that match the use case flow
+function cardBorderColor(hasError: boolean, hasUrl: boolean): string {
+  if (hasError) return '#fca5a5';
+  if (hasUrl) return '#D4AF37';
+  return '#e2e8f0';
+}
+function cardIconBg(hasError: boolean, hasUrl: boolean): string {
+  if (hasError) return '#fef2f2';
+  if (hasUrl) return '#D4AF37';
+  return '#f1f5f9';
+}
+function cardIconColor(hasError: boolean, hasUrl: boolean): string {
+  if (hasError) return '#ef4444';
+  if (hasUrl) return '#ffffff';
+  return '#94a3b8';
+}
+function cardTopBar(hasError: boolean, hasUrl: boolean): string {
+  if (hasUrl && !hasError) return 'linear-gradient(90deg,#1E3A5F,#D4AF37)';
+  if (hasError) return '#ef4444';
+  return '#f1f5f9';
+}
+function stepBg(isCurrent: boolean, isDone: boolean): string {
+  if (isCurrent) return '#ffffff';
+  if (isDone) return 'rgba(5,150,105,0.08)';
+  return 'rgba(255,255,255,0.04)';
+}
+function stepBorder(isCurrent: boolean, isDone: boolean): string {
+  if (isCurrent) return '#ffffff';
+  if (isDone) return 'rgba(5,150,105,0.2)';
+  return 'rgba(255,255,255,0.07)';
+}
+function stepIconBg(isCurrent: boolean, isDone: boolean): string {
+  if (isDone) return '#059669';
+  if (isCurrent) return '#1E3A5F';
+  return 'rgba(255,255,255,0.08)';
+}
+function stepTextColor(isCurrent: boolean, isDone: boolean): string {
+  if (isCurrent) return '#0f172a';
+  if (isDone) return '#6ee7b7';
+  return '#64748b';
+}
+
+const PIPELINE_STEPS = [
+  'Saving artifact sources',
+  'Retrieving and extracting document text',
+  'Analyzing traceability pairs with Large Language Model',
+  'Generating comprehensive audit report',
+] as const;
+
+// Returns an error message if the URL is not a supported format, null if valid
+function validateArtifactUrl(url: string): string | null {
+  if (!url.trim()) return null;
+  if (!url.startsWith('http://') && !url.startsWith('https://'))
+    return 'URL must start with https://';
+  const ok =
+    url.includes('docs.google.com/document/d/') ||
+    url.includes('drive.google.com/') ||
+    url.includes('github.com/');
+  return ok ? null : 'Unsupported URL — use a Google Docs, Google Drive, or GitHub link';
+}
+
+interface ArtifactCardProps {
+  field: ArtifactField;
+  val: string;
+  error: string | undefined;
+  running: boolean;
+  onChange: (key: ArtifactType, value: string) => void;
+  onClear: (key: ArtifactType) => void;
+}
+
+function ArtifactCard({ field, val, error, running, onChange, onClear }: Readonly<ArtifactCardProps>) {
+  const hasUrl = val.trim() !== '';
+  const hasError = !!error;
+  const borderColor = cardBorderColor(hasError, hasUrl);
+  const iconBg = cardIconBg(hasError, hasUrl);
+  const iconColor = cardIconColor(hasError, hasUrl);
+
+  return (
+    <div style={{
+      backgroundColor: '#ffffff', borderRadius: '16px',
+      border: `1.5px solid ${borderColor}`,
+      boxShadow: hasUrl && !hasError ? '0 4px 16px rgba(212,175,55,0.12)' : '0 2px 8px rgba(0,0,0,0.04)',
+      overflow: 'hidden', transition: 'border-color 0.2s, box-shadow 0.2s',
+      display: 'flex', flexDirection: 'column',
+    }}>
+      <div style={{ height: '3px', background: cardTopBar(hasError, hasUrl), transition: 'background 0.3s' }} />
+      <div style={{ padding: '14px 14px 12px', display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
+        {/* Header row */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+          <div style={{
+            width: '38px', height: '38px', borderRadius: '10px', flexShrink: 0,
+            backgroundColor: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'background-color 0.2s',
+          }}>
+            {React.cloneElement(field.icon as React.ReactElement, { size: 16, color: iconColor })}
+          </div>
+          {hasUrl && !hasError && (
+            <span style={{ fontSize: '9px', fontWeight: 700, color: '#059669', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '6px', padding: '2px 7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Linked</span>
+          )}
+          {hasError && (
+            <span style={{ fontSize: '9px', fontWeight: 700, color: '#ef4444', backgroundColor: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '6px', padding: '2px 7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Invalid</span>
+          )}
+        </div>
+        {/* Label + description */}
+        <div>
+          <p style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', margin: '0 0 3px', letterSpacing: '-0.01em' }}>{field.label}</p>
+          <p style={{ fontSize: '11px', color: '#94a3b8', margin: 0, lineHeight: 1.4 }}>{field.description}</p>
+        </div>
+        {/* URL input */}
+        <div style={{ position: 'relative' }}>
+          <input
+            type="url"
+            value={val}
+            onChange={(e) => onChange(field.key, e.target.value)}
+            placeholder={field.placeholder}
+            disabled={running}
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              backgroundColor: '#f8fafc', border: `1px solid ${hasError ? '#fca5a5' : '#e2e8f0'}`,
+              borderRadius: '10px', padding: '9px 70px 9px 12px',
+              fontSize: '11px', fontWeight: 500, color: '#0f172a',
+              outline: 'none', transition: 'border-color 0.2s',
+            }}
+          />
+          {hasUrl && (
+            <div style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: '2px' }}>
+              <a href={val} target="_blank" rel="noopener noreferrer" style={{ padding: '4px', color: '#94a3b8', display: 'flex', alignItems: 'center' }}>
+                <ExternalLink size={12} />
+              </a>
+              <button type="button" onClick={() => onClear(field.key)} style={{ padding: '4px', color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                <X size={12} />
+              </button>
+            </div>
+          )}
+        </div>
+        {hasError && <p style={{ fontSize: '10px', fontWeight: 600, color: '#ef4444', margin: 0 }}>{error}</p>}
+      </div>
+    </div>
+  );
+}
+
+function collectUrlErrors(urls: Record<ArtifactType, string>): Partial<Record<ArtifactType, string>> {
+  const errors: Partial<Record<ArtifactType, string>> = {};
+  for (const field of ARTIFACT_FIELDS) {
+    const err = validateArtifactUrl(urls[field.key]);
+    if (err) errors[field.key] = err;
+  }
+  return errors;
+}
+
 type Status = 'idle' | 'processing' | 'completed';
 
 interface WorkspaceOption {
@@ -81,7 +228,7 @@ interface WorkspaceOption {
 
 export const ArtifactsPage: React.FC = () => {
   const navigate = useNavigate();
-  const { groupId } = useAuthStore();
+  const { groupId, setGroupId } = useAuthStore();
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>(groupId ?? '');
   const [urls, setUrls] = useState<Record<ArtifactType, string>>({
@@ -92,20 +239,16 @@ export const ArtifactsPage: React.FC = () => {
     STD: '',
     SOURCE_CODE: '',
   });
-  const [statuses, setStatuses] = useState<Record<ArtifactType, Status>>({
-    PROPOSAL: 'idle',
-    SRS: 'idle',
-    SDD: 'idle',
-    SPMP: 'idle',
-    STD: 'idle',
-    SOURCE_CODE: 'idle',
-  });
   const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   // Track which types currently exist in the DB so we can delete on removal
   const [savedTypes, setSavedTypes] = useState<Set<ArtifactType>>(new Set());
+  // Per-field URL validation errors
+  const [urlErrors, setUrlErrors] = useState<Partial<Record<ArtifactType, string>>>({});
+  // Which pipeline step is currently active (-1 = idle, ≥ PIPELINE_STEPS.length = all done)
+  const [pipelineStep, setPipelineStep] = useState(-1);
 
   // Fetch all workspaces the student belongs to
   useEffect(() => {
@@ -113,9 +256,7 @@ export const ArtifactsPage: React.FC = () => {
       .then((res) => {
         const groups: Array<{ id: string; name: string; projectTitle: string }> = res.data.groups ?? [];
         setWorkspaces(groups);
-        if (!selectedGroupId && groups.length > 0) {
-          setSelectedGroupId(groups[0].id);
-        }
+        if (!selectedGroupId) setSelectedGroupId(groups[0]?.id ?? '');
       })
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -124,7 +265,6 @@ export const ArtifactsPage: React.FC = () => {
   // Reload artifacts when the selected workspace changes
   const resetUrls = useCallback(() => {
     setUrls({ PROPOSAL: '', SRS: '', SDD: '', SPMP: '', STD: '', SOURCE_CODE: '' });
-    setStatuses({ PROPOSAL: 'idle', SRS: 'idle', SDD: 'idle', SPMP: 'idle', STD: 'idle', SOURCE_CODE: 'idle' });
     setSavedTypes(new Set());
   }, []);
 
@@ -138,26 +278,18 @@ export const ArtifactsPage: React.FC = () => {
         if (saved.length === 0) return;
         const newUrls: Partial<Record<ArtifactType, string>> = {};
         const types = new Set<ArtifactType>();
-        for (const a of saved) {
-          newUrls[a.type] = a.url;
-          types.add(a.type);
-        }
+        saved.forEach((a) => { newUrls[a.type] = a.url; types.add(a.type); });
         setUrls((prev) => ({ ...prev, ...newUrls }));
         setSavedTypes(types);
       })
       .catch(() => {/* no existing artifacts */});
   }, [selectedGroupId, resetUrls]);
 
-  const prefill = () => {
-    setUrls({ ...PREFILLED });
-  };
-
   const buildFilledArtifacts = () =>
     ARTIFACT_FIELDS
       .filter((f) => urls[f.key].trim() !== '')
       .map((f) => ({ type: f.key, url: urls[f.key].trim() }));
 
-  // Delete types that were in DB but are now empty
   const deleteRemovedTypes = async (gid: string) => {
     const toDelete = ARTIFACT_FIELDS
       .filter((f) => savedTypes.has(f.key) && urls[f.key].trim() === '')
@@ -201,250 +333,316 @@ export const ArtifactsPage: React.FC = () => {
       setSaveError('No workspace selected. Please select a workspace above.');
       return;
     }
+
+    // Validate all filled URLs before proceeding (Alternative Flow)
+    const newErrors = collectUrlErrors(urls);
+    if (Object.keys(newErrors).length > 0) {
+      setUrlErrors(newErrors);
+      setSaveError('Please fix the invalid URLs before running traceability.');
+      return;
+    }
+
     setRunning(true);
+    setPipelineStep(0); // Step 0: Saving
     setSaveError(null);
     setSaveSuccess(false);
 
-    // Delete removed types then save filled artifacts
+    // Save artifacts
     await deleteRemovedTypes(selectedGroupId);
     const filledArtifacts = buildFilledArtifacts();
-
     try {
       await api.post('/api/artifacts', { groupId: selectedGroupId, artifacts: filledArtifacts });
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: string } } };
       setSaveError(axiosErr.response?.data?.error ?? 'Failed to save artifacts.');
       setRunning(false);
+      setPipelineStep(-1);
       return;
     }
 
-    // Run audit
+    // Advance through pipeline steps while the audit API runs in the background
+    setPipelineStep(1);
+    const stepInterval = setInterval(() => {
+      setPipelineStep((prev) => Math.min(prev + 1, PIPELINE_STEPS.length - 1));
+    }, 8000); // 8s per step to better match real AI processing time
+
     try {
       await api.post(`/api/audit/${selectedGroupId}`);
-    } catch {
-      // audit may fail if content extraction not available; proceed to matrix anyway
+    } catch (err: unknown) {
+      clearInterval(stepInterval);
+      const axiosErr = err as { response?: { data?: { error?: string; details?: string } } };
+      const msg = axiosErr.response?.data?.error || 'Analysis failed.';
+      const sub = axiosErr.response?.data?.details;
+      setSaveError(msg + (sub ? `: ${sub}` : ''));
+      setRunning(false);
+      setPipelineStep(-1);
+      return;
     }
 
-    const keys = ARTIFACT_FIELDS.map((f) => f.key);
-    for (const key of keys) {
-      setStatuses((s) => ({ ...s, [key]: 'processing' }));
-      await new Promise((r) => setTimeout(r, 400));
-      setStatuses((s) => ({ ...s, [key]: 'completed' }));
-    }
+    clearInterval(stepInterval);
+    setPipelineStep(PIPELINE_STEPS.length); // mark all steps complete
 
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 400));
     setRunning(false);
+    setGroupId(selectedGroupId);
     navigate('/matrix');
   };
 
-  const anyFilled = ARTIFACT_FIELDS.some((f) => urls[f.key].trim() !== '');
-  const allFilled = ARTIFACT_FIELDS.every((f) => urls[f.key].trim() !== '');
-  const completedCount = Object.values(statuses).filter((s) => s === 'completed').length;
+  const filledCount = ARTIFACT_FIELDS.filter((f) => urls[f.key].trim() !== '').length;
+  const anyFilled = filledCount > 0;
+  const hasUrlErrors = Object.values(urlErrors).some(Boolean);
+  const workspaceSelector = workspaces.length > 1 ? (
+    <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+      <select
+        value={selectedGroupId}
+        onChange={(e) => setSelectedGroupId(e.target.value)}
+        disabled={running}
+        style={{
+          appearance: 'none' as const,
+          WebkitAppearance: 'none' as const,
+          backgroundColor: 'rgba(255,255,255,0.10)',
+          border: '1px solid rgba(212,175,55,0.35)',
+          borderRadius: '12px',
+          color: '#ffffff',
+          fontSize: '13px',
+          fontWeight: 700,
+          padding: '10px 40px 10px 16px',
+          cursor: running ? 'not-allowed' : 'pointer',
+          outline: 'none',
+          minWidth: '200px',
+        }}
+      >
+        {workspaces.map((ws) => (
+          <option key={ws.id} value={ws.id} style={{ backgroundColor: '#1E3A5F', color: '#fff' }}>
+            {ws.projectTitle || ws.name}
+          </option>
+        ))}
+      </select>
+      <ChevronDown size={14} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: '#D4AF37', pointerEvents: 'none' }} />
+    </div>
+  ) : null;
+
+  const handleUrlChange = useCallback((key: ArtifactType, value: string) => {
+    setUrls((u) => ({ ...u, [key]: value }));
+    const err = validateArtifactUrl(value);
+    setUrlErrors((prev) => {
+      const next = { ...prev };
+      if (err) next[key] = err;
+      else delete next[key];
+      return next;
+    });
+  }, []);
+
+  const handleClear = useCallback((key: ArtifactType) => {
+    setUrls((u) => ({ ...u, [key]: '' }));
+  }, []);
+
+  const canRunAudit = filledCount >= 2 && !hasUrlErrors;
+  const auditDisabled = running || !canRunAudit;
+  const saveDisabled = !anyFilled || saving || running;
 
   return (
     <Layout
-      title="Artifact Submission"
-      subtitle="Submit document URLs for AI-powered traceability analysis"
-      headerAction={
-        <Button variant="outline" size="sm" onClick={prefill}>
-          Load Demo Data
-        </Button>
-      }
+      title="Artifact Registry"
+      subtitle="Connect your project documents for AI traceability analysis"
+      badge="Documents"
+      heroIcon={<FileText size={26} />}
+      headerAction={workspaceSelector}
     >
-      <div className="max-w-2xl space-y-4">
-        {/* Visual progress steps */}
-        <div className="grid grid-cols-4 gap-2 border-b border-gray-100 pb-3 mb-1">
-          {[
-            { step: 1, name: 'Select Group', desc: 'Choose workspace', active: true },
-            { step: 2, name: 'Submit Links', desc: 'Paste document URLs', active: true },
-            { step: 3, name: 'Save Work', desc: 'Save progress anytime', active: anyFilled },
-            { step: 4, name: 'Run Audit', desc: 'AI sequential analysis', active: allFilled || running },
-          ].map((s) => (
-            <div key={s.step} className="flex flex-col border-t-2 pt-2 transition-all duration-300" style={{ borderColor: s.active ? '#fbbf24' : '#e2e8f0' }}>
-              <span className={`text-[10px] font-extrabold ${s.active ? 'text-primary' : 'text-gray-400'}`}>0{s.step}</span>
-              <span className={`text-[11.5px] font-bold mt-0.5 ${s.active ? 'text-gray-950 font-extrabold' : 'text-gray-400 font-medium'}`}>{s.name}</span>
-              <span className="text-[10px] text-gray-400 leading-none">{s.desc}</span>
-            </div>
-          ))}
-        </div>
+      <div style={{ maxWidth: '1100px', margin: '0 auto', paddingBottom: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-        {/* Workspace selector */}
-        {workspaces.length > 1 && (
-          <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-white border border-gray-100 shadow-sm">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-              <Layers size={15} className="text-primary" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-[0.06em] mb-1">Workspace</p>
-              <div className="relative">
-                <select
-                  value={selectedGroupId}
-                  onChange={(e) => setSelectedGroupId(e.target.value)}
-                  disabled={running}
-                  className="w-full appearance-none pr-8 py-0 border-0 bg-transparent text-[13px] font-semibold text-gray-900 focus:outline-none cursor-pointer"
-                >
-                  {workspaces.map((ws) => (
-                    <option key={ws.id} value={ws.id}>
-                      {ws.name}{ws.projectTitle ? ` — ${ws.projectTitle}` : ''}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={13} className="absolute right-0 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        {/* Artifact cards grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px' }}>
+            {ARTIFACT_FIELDS.map((field) => (
+              <ArtifactCard
+                key={field.key}
+                field={field}
+                val={urls[field.key]}
+                error={urlErrors[field.key]}
+                running={running}
+                onChange={handleUrlChange}
+                onClear={handleClear}
+              />
+            ))}
+          </div>
+
+        {/* ── Action bar ──────────────────────────────────── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+            {/* Progress card */}
+            <div style={{
+              backgroundColor: '#ffffff', borderRadius: '16px',
+              border: '1px solid #e2e8f0', padding: '20px',
+              boxShadow: '0 2px 8px rgba(30,58,95,0.06)',
+            }}>
+              <p style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 14px' }}>Progress</p>
+
+              {/* Segment dots */}
+              <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
+                {ARTIFACT_FIELDS.map(({ key }) => {
+                  const linked = urls[key].trim() !== '';
+                  return (
+                    <div key={key} style={{
+                      flex: 1, height: '6px', borderRadius: '3px',
+                      background: linked ? 'linear-gradient(90deg,#1E3A5F,#D4AF37)' : '#e9eef5',
+                      transition: 'background 0.3s',
+                    }} />
+                  );
+                })}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <span style={{ fontSize: '13px', fontWeight: 800, color: '#1E3A5F' }}>{filledCount} / {ARTIFACT_FIELDS.length} linked</span>
+                {filledCount >= 2 && (
+                  <span style={{ fontSize: '10px', fontWeight: 700, color: '#059669', backgroundColor: '#ecfdf5', borderRadius: '6px', padding: '2px 8px' }}>
+                    Ready to audit
+                  </span>
+                )}
               </div>
             </div>
-          </div>
-        )}
 
-        {/* Info banner */}
-        <div className="flex items-start gap-3 p-4 rounded-2xl bg-blue-50 border border-blue-100 ring-1 ring-blue-100/50">
-          <div className="w-6 h-6 rounded-lg bg-blue-500 flex items-center justify-center shrink-0 mt-0.5">
-            <span className="text-white text-[11px] font-bold">i</span>
-          </div>
-          <div>
-            <p className="text-[13px] font-semibold text-blue-900">Google Docs & GitHub URLs supported</p>
-            <p className="text-[12px] text-blue-500 mt-0.5 leading-relaxed">
-              Paste shareable Google Docs links or GitHub repository URLs. Documents are analyzed via AI embedding.
-            </p>
-          </div>
-        </div>
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              {/* Run Audit — primary CTA */}
+              <button
+                type="button"
+                onClick={handleRunTraceability}
+                disabled={auditDisabled}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  background: auditDisabled
+                    ? 'linear-gradient(135deg,#94a3b8,#cbd5e1)'
+                    : 'linear-gradient(135deg,#1E3A5F,#2d5a9e)',
+                  color: '#ffffff', border: 'none', borderRadius: '12px',
+                  padding: '14px 24px', fontSize: '13px', fontWeight: 800,
+                  cursor: auditDisabled ? 'not-allowed' : 'pointer',
+                  boxShadow: auditDisabled ? 'none' : '0 6px 20px rgba(30,58,95,0.3)',
+                  transition: 'background 0.2s, box-shadow 0.2s',
+                  letterSpacing: '-0.01em', whiteSpace: 'nowrap',
+                }}
+              >
+                {running
+                  ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                  : <Play size={16} style={{ fill: 'currentColor' }} />}
+                {running ? 'Analyzing…' : 'Run Traceability Audit'}
+              </button>
 
-        {/* Artifact inputs */}
-        <Card>
-          <h2 className="text-[15px] font-bold text-gray-900 mb-5 tracking-tight">Document URLs</h2>
-          <div className="space-y-5">
-            {ARTIFACT_FIELDS.map((field, idx) => {
-              const status = statuses[field.key];
-              return (
-                <div key={field.key} className="animate-fade-in" style={{ animationDelay: `${idx * 40}ms` }}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="flex items-center gap-2 text-[13px] font-semibold text-gray-700">
-                      <span className={status === 'completed' ? 'text-emerald-500' : 'text-gray-400'}>{field.icon}</span>
-                      {field.label}
-                    </label>
-                    {status === 'processing' && (
-                      <span className="flex items-center gap-1.5 text-[11px] text-blue-600 font-semibold">
-                        <Loader2 size={11} className="animate-spin" />
-                        Analyzing…
-                      </span>
-                    )}
-                    {status === 'completed' && (
-                      <Badge variant="completed" dot>Analyzed</Badge>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <input
-                      type="url"
-                      value={urls[field.key]}
-                      onChange={(e) => setUrls((u) => ({ ...u, [field.key]: e.target.value }))}
-                      placeholder={field.placeholder}
-                      disabled={running}
-                      className={`w-full px-3.5 py-2.5 border rounded-xl text-[13px] placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all duration-150 disabled:opacity-60 ${
-                        urls[field.key] ? 'pr-16' : 'pr-10'
-                      } ${
-                        status === 'completed'
-                          ? 'border-emerald-200 bg-emerald-50/50 text-gray-700 ring-1 ring-emerald-100'
-                          : 'border-gray-200 bg-white text-gray-900 shadow-inner-sm hover:border-gray-300'
-                      }`}
-                    />
-                    {urls[field.key] && (
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-                        <a
-                          href={urls[field.key]}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-gray-300 hover:text-primary transition-colors"
-                          tabIndex={-1}
-                        >
-                          <ExternalLink size={14} />
-                        </a>
-                        <button
-                          type="button"
-                          onClick={() => setUrls((u) => ({ ...u, [field.key]: '' }))}
-                          disabled={running}
-                          className="text-gray-300 hover:text-critical transition-colors disabled:opacity-40"
-                          title="Remove link"
-                        >
-                          <X size={13} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  {/* Dynamic link visual feedback */}
-                  {urls[field.key] && (
-                    <div className="flex flex-col">
-                      {urls[field.key].includes('docs.google.com/document/d/') && (
-                        <span className="inline-flex max-w-fit items-center gap-1.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-150 px-2 py-0.5 rounded-full mt-1.5 transition-all animate-fade-in uppercase tracking-wider">
-                          <Sparkles size={10} className="text-emerald-500 animate-pulse animate-bounce" />
-                          Google Doc detected (AI Extraction ready)
-                        </span>
-                      )}
-                      {urls[field.key].includes('github.com/') && (
-                        <span className="inline-flex max-w-fit items-center gap-1.5 text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-150 px-2 py-0.5 rounded-full mt-1.5 transition-all animate-fade-in uppercase tracking-wider">
-                          <Sparkles size={10} className="text-blue-500 animate-pulse animate-bounce" />
-                          GitHub Repo detected (Auto-README Review ready)
-                        </span>
-                      )}
-                      {(urls[field.key].startsWith('http://') || urls[field.key].startsWith('https://')) && !urls[field.key].includes('docs.google.com/document/d/') && !urls[field.key].includes('github.com/') && (
-                        <span className="inline-flex max-w-fit items-center gap-1.5 text-[10px] font-bold text-gray-500 bg-gray-50 border border-gray-150 px-2 py-0.5 rounded-full mt-1.5 transition-all animate-fade-in uppercase tracking-wider">
-                          Web standard link (Raw Indexing active)
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  <p className="text-[11px] text-gray-400 mt-1 font-medium">{field.description}</p>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-
-        {/* Progress bar */}
-        {running && (
-          <div className="flex items-center gap-3 p-4 rounded-2xl bg-primary/[0.04] border border-primary/10 ring-1 ring-primary/10">
-            <Loader2 size={17} className="animate-spin text-primary shrink-0" />
-            <div className="flex-1">
-              <div className="flex justify-between text-[13px] mb-1.5">
-                <span className="font-semibold text-gray-700">Running AI Traceability Analysis…</span>
-                <span className="text-gray-400 font-medium">{completedCount}/{ARTIFACT_FIELDS.length}</span>
-              </div>
-              <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-primary rounded-full transition-all duration-500"
-                  style={{ width: `${(completedCount / ARTIFACT_FIELDS.length) * 100}%` }}
-                />
-              </div>
+              {/* Save */}
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saveDisabled}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  backgroundColor: saveDisabled ? '#f1f5f9' : '#f8fafc',
+                  color: saveDisabled ? '#94a3b8' : '#1E3A5F',
+                  border: '1px solid #e2e8f0', borderRadius: '12px',
+                  padding: '11px 20px', fontSize: '12px', fontWeight: 700,
+                  cursor: saveDisabled ? 'not-allowed' : 'pointer',
+                  transition: 'background-color 0.2s', whiteSpace: 'nowrap',
+                }}
+              >
+                {saving ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={14} />}
+                {saving ? 'Saving…' : 'Save Artifacts'}
+              </button>
             </div>
-          </div>
-        )}
 
-        <div className="flex items-center justify-end gap-3">
-          {saveSuccess && (
-            <span className="flex items-center gap-1.5 text-[12px] text-emerald-600 font-semibold animate-fade-in">
-              <CheckCircle2 size={13} />
-              Saved
-            </span>
-          )}
-          {saveError && <p className="text-[12.5px] text-critical">{saveError}</p>}
-          <Button
-            variant="outline"
-            onClick={handleSave}
-            disabled={!anyFilled || saving || running}
-            loading={saving}
-          >
-            <Save size={14} />
-            Save Progress
-          </Button>
-          <Button
-            size="lg"
-            onClick={handleRunTraceability}
-            disabled={!allFilled || running || saving}
-            loading={running}
-          >
-            <Play size={16} />
-            {running ? 'Running Analysis…' : 'Run Traceability'}
-          </Button>
+            {/* Error message */}
+            {saveError && (
+              <div style={{
+                display: 'flex', gap: '10px', alignItems: 'flex-start',
+                backgroundColor: '#fef2f2', border: '1px solid #fca5a5',
+                borderRadius: '12px', padding: '14px',
+              }}>
+                <AlertCircle size={16} color="#ef4444" style={{ flexShrink: 0, marginTop: '1px' }} />
+                <p style={{ fontSize: '12px', fontWeight: 500, color: '#ef4444', margin: 0, lineHeight: 1.5 }}>{saveError}</p>
+              </div>
+            )}
+
+            {/* Success message */}
+            {saveSuccess && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0',
+                borderRadius: '12px', padding: '12px 14px',
+              }}>
+                <CheckCircle2 size={15} color="#059669" />
+                <p style={{ fontSize: '12px', fontWeight: 700, color: '#059669', margin: 0 }}>Artifacts saved successfully</p>
+              </div>
+            )}
         </div>
       </div>
+
+      {/* ── Audit pipeline modal ─────────────────────────────── */}
+      {running && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 100,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backgroundColor: '#0B1521', padding: '24px',
+        }}>
+          {/* Grid overlay */}
+          <div style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.04,
+            backgroundImage: 'linear-gradient(rgba(212,175,55,0.8) 1px,transparent 1px),linear-gradient(90deg,rgba(212,175,55,0.8) 1px,transparent 1px)',
+            backgroundSize: '40px 40px',
+          }} />
+
+          <div style={{ maxWidth: '480px', width: '100%', textAlign: 'center', position: 'relative', zIndex: 1 }}>
+            {/* Spinner */}
+            <div style={{
+              width: '80px', height: '80px', borderRadius: '24px',
+              background: 'linear-gradient(135deg,#D4AF37,#c9a227)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 28px',
+              boxShadow: '0 0 40px rgba(212,175,55,0.4)',
+            }}>
+              <Loader2 size={36} color="#0B1521" style={{ animation: 'spin 1s linear infinite' }} />
+            </div>
+
+            <h2 style={{ fontSize: '28px', fontWeight: 900, color: '#ffffff', margin: '0 0 8px', letterSpacing: '-0.03em' }}>
+              Running Analysis
+            </h2>
+            <p style={{ fontSize: '13px', color: '#D4AF37', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 36px' }}>
+              Step {pipelineStep + 1} of {PIPELINE_STEPS.length}
+            </p>
+
+            {/* Pipeline steps */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', textAlign: 'left' }}>
+              {PIPELINE_STEPS.map((step, i) => {
+                const isCurrent = i === pipelineStep;
+                const isDone = i < pipelineStep;
+
+                return (
+                  <div key={step} style={{
+                    display: 'flex', alignItems: 'center', gap: '14px',
+                    padding: '14px 18px', borderRadius: '14px',
+                    backgroundColor: stepBg(isCurrent, isDone),
+                    border: `1px solid ${stepBorder(isCurrent, isDone)}`,
+                    opacity: isDone || isCurrent ? 1 : 0.35,
+                    transition: 'all 0.4s',
+                  }}>
+                    <div style={{
+                      width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: stepIconBg(isCurrent, isDone),
+                      fontSize: '12px', fontWeight: 800,
+                      color: isDone || isCurrent ? '#ffffff' : '#64748b',
+                    }}>
+                      {isDone ? <CheckCircle2 size={18} /> : <span>0{i + 1}</span>}
+                    </div>
+                    <div>
+                      <p style={{ fontSize: '13px', fontWeight: 700, margin: 0, color: stepTextColor(isCurrent, isDone) }}>{step}</p>
+                      {isCurrent && (
+                        <p style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', margin: '3px 0 0', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Processing…</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 };

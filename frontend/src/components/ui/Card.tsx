@@ -16,25 +16,19 @@ export const Card: React.FC<CardProps> = ({
   hover = false,
   onClick,
 }) => {
-  const paddings = { none: '', sm: 'p-4', md: 'p-5', lg: 'p-7' };
+  const paddings = { none: '', sm: 'p-4', md: 'p-6', lg: 'p-10' };
 
   const classes = cn(
-    'bg-white rounded-2xl border border-gray-100 shadow-card',
+    'glass-card relative overflow-hidden transition-all duration-300',
     paddings[padding],
-    hover && 'cursor-pointer hover:shadow-card-hover hover:border-gray-200 transition-all duration-200',
+    hover && 'cursor-pointer hover:shadow-2xl hover:-translate-y-1 active:scale-[0.98]',
     className,
   );
 
-  if (onClick) {
-    return (
-      <button type="button" className={classes} onClick={onClick}>
-        {children}
-      </button>
-    );
-  }
-
   return (
-    <div className={classes}>
+    <div className={classes} onClick={onClick}>
+      {/* Subtle top light effect */}
+      <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/50 to-transparent" />
       {children}
     </div>
   );

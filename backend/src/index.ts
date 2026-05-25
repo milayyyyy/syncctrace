@@ -26,12 +26,25 @@ app.use(cors({
   ],
   credentials: true,
 }));
-app.use(rateLimit({
+// General rate limit — generous for a SPA that makes multiple calls per page
+const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 min
-  max: 100,
+  max: 500,
   standardHeaders: true,
   legacyHeaders: false,
-}));
+  message: { error: 'Too many requests. Please slow down.' },
+});
+
+// Stricter limit only for heavy auth mutation endpoints (sync/signup)
+const authMutationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many auth requests. Please wait before trying again.' },
+});
+
+app.use(generalLimiter);
 app.use(express.json({ limit: '2mb' }));
 
 // Routes

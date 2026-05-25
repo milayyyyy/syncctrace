@@ -26,6 +26,9 @@ interface AuthState {
 
 type StoreSetter = (s: Partial<AuthState>) => void;
 
+/** In-flight guard: prevents concurrent duplicate initFromSession calls (e.g. React StrictMode). */
+let initInFlight: Promise<void> | null = null;
+
 /** Load the first group for the signed-in user (non-fatal, best-effort). */
 async function loadUserGroup(setState: StoreSetter): Promise<void> {
   try {
@@ -46,6 +49,26 @@ async function fetchUserProfile(session: Session, pendingRole: Role | null) {
     name: sbUser.user_metadata?.full_name ?? sbUser.email?.split('@')[0] ?? 'User',
     avatarUrl: sbUser.user_metadata?.avatar_url ?? null,
   });
+}
+
+/** Handle known auth errors from initFromSession; returns true if handled. */
+async function handleInitError(err: any, pendingRole: Role | null, setState: StoreSetter): Promise<boolean> {
+  const status = err?.response?.status;
+  if (status === 404) {
+    await supabase.auth.signOut();
+    setState({ isLoading: false, authError: 'No account found. Please sign up first.', authRedirectTo: '/signup' });
+    return true;
+  }
+  if (status === 403 && err?.response?.data?.error === 'ROLE_MISMATCH') {
+    const actualRole: Role = err.response.data.role as Role;
+    const label = actualRole === 'STUDENT' ? 'Student' : 'Adviser';
+    await supabase.auth.signOut();
+    setState({ isLoading: false, authError: `Account already registered as ${label}. Please sign in instead.`, authRedirectTo: '/login' });
+    return true;
+  }
+  if (pendingRole) await supabase.auth.signOut();
+  setState({ isLoading: false, authRedirectTo: '/login' });
+  return false;
 }
 
 
@@ -70,7 +93,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const res = await api.get('/api/auth/me');
         const user: User = res.data.user;
         set({ user, isAuthenticated: true, isLoading: false, authError: null, authRedirectTo: '/login' });
-        loadUserGroup(set);
+        await loadUserGroup(set);
       } catch (err: any) {
         if (err?.response?.status === 404) {
           // Supabase account exists but no app account — send to sign up
@@ -127,10 +150,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   initFromSession: async () => {
+    // Deduplicate concurrent calls (React StrictMode fires effects twice in dev)
+    if (initInFlight) return initInFlight;
+    // Skip if already authenticated and not in initial loading state
+    if (get().isAuthenticated) return;
+
+    let resolve!: () => void;
+    initInFlight = new Promise<void>((r) => { resolve = r; });
     set({ isLoading: true });
 
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { set({ isLoading: false }); return; }
+    if (!session) {
+      set({ isLoading: false });
+      initInFlight = null;
+      resolve();
+      return;
+    }
 
     const pendingRole = localStorage.getItem('pending_role') as Role | null;
     localStorage.removeItem('pending_role');
@@ -139,38 +174,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const res = await fetchUserProfile(session, pendingRole);
       const user: User = res.data.user;
       set({ user, isAuthenticated: true, isLoading: false, authError: null, authRedirectTo: '/login' });
-      loadUserGroup(set);
+      await loadUserGroup(set);
     } catch (err: any) {
-      const status = err?.response?.status;
-
-      // Login flow: authenticated with Google but no app account — redirect to sign up
-      if (status === 404) {
-        await supabase.auth.signOut();
-        set({ isLoading: false, authError: 'No account found. Please sign up first.', authRedirectTo: '/signup' });
-        return;
-      }
-
-      // Sign-up flow: account already exists with a different role
-      if (status === 403 && err?.response?.data?.error === 'ROLE_MISMATCH') {
-        const actualRole: Role = err.response.data.role as Role;
-        const label = actualRole === 'STUDENT' ? 'Student' : 'Adviser';
-        await supabase.auth.signOut();
-        set({
-          isLoading: false,
-          authError: `Account already registered as ${label}. Please sign in instead.`,
-          authRedirectTo: '/login',
-        });
-        return;
-      }
-
-      // Unexpected error — clean up
-      if (pendingRole) await supabase.auth.signOut();
-      set({ isLoading: false, authRedirectTo: '/login' });
+      await handleInitError(err, pendingRole, set);
     }
+    initInFlight = null;
+    resolve();
   },
 
   logout: async () => {
     await supabase.auth.signOut();
+    initInFlight = null;
     set({ user: null, isAuthenticated: false, selectedRole: 'STUDENT', isLoading: false, groupId: null, authRedirectTo: '/login' });
   },
 }));

@@ -18,6 +18,15 @@ const JoinProjectSchema = z.object({
   projectTitle: z.string().max(200).optional(),
 });
 
+// Student team leader initializes a brand-new project workspace
+const InitWorkspaceSchema = z.object({
+  projectTitle: z.string().min(1, 'Project title is required').max(200),
+  teamCode:     z.string().min(2, 'Team code is required').max(20)
+                  .regex(/^[A-Z0-9-]+$/i, 'Only letters, numbers, and hyphens allowed'),
+  adviserId:    z.string().uuid('Please select a valid faculty adviser'),
+  memberEmails: z.array(z.string().email('Invalid email address')).max(20).default([]),
+});
+
 function generateTeamCode(sectionName: string): string {
   const prefix = sectionName.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'GRP';
   const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -145,66 +154,46 @@ projectsRouter.post('/join', async (req: AuthRequest, res: Response): Promise<vo
   }
 });
 
-// GET /api/projects/:id — get single group with latest audit
-projectsRouter.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id } = req.params;
-  try {
-    const group = await prisma.facultyGroup.findUnique({
-      where: { id },
-      include: groupInclude,
-    });
-    if (!group) {
-      res.status(404).json({ error: 'Group not found.' });
-      return;
-    }
-    res.json({ group });
-  } catch (err) {
-    console.error('GET /projects/:id error:', err);
-    res.status(500).json({ error: 'Failed to fetch group.' });
-  }
-});
-
-// GET /api/projects — list groups the user belongs to or advises
-projectsRouter.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const userId = req.user!.id;
-  try {
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
-    const groups = await prisma.facultyGroup.findMany({
-      where: user?.role === 'FACULTY'
-        ? { advisorId: userId }
-        : { members: { some: { id: userId } } },
-      include: groupInclude,
-      orderBy: { createdAt: 'desc' },
-    });
-    res.json({ groups });
-  } catch (err) {
-    console.error('GET /projects error:', err);
-    res.status(500).json({ error: 'Failed to fetch groups.' });
-  }
-});
-
-// POST /api/projects — create a new group
-projectsRouter.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const parsed = CreateProjectSchema.safeParse(req.body);
+// POST /api/projects/init — student team leader initializes a new project workspace
+projectsRouter.post('/init', async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = InitWorkspaceSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
     return;
   }
-  const { title, teamCode, adviserId, memberEmails } = parsed.data;
   const userId = req.user!.id;
+  const { projectTitle, teamCode, adviserId, memberEmails } = parsed.data;
+
   try {
+    // Validate that the selected adviser is a real FACULTY user
+    const adviser = await prisma.user.findUnique({
+      where: { id: adviserId },
+      select: { id: true, role: true },
+    });
+    if (adviser?.role !== 'FACULTY') {
+      res.status(400).json({ error: 'Selected adviser is not a valid faculty member.' });
+      return;
+    }
+
+    // Look up members by email — unknown emails are skipped gracefully
     const memberUsers = memberEmails.length > 0
-      ? await prisma.user.findMany({ where: { email: { in: memberEmails } }, select: { id: true } })
+      ? await prisma.user.findMany({
+          where: { email: { in: memberEmails } },
+          select: { id: true },
+        })
       : [];
+
+    // Always include the team leader themselves
     const memberIds = [...new Set([userId, ...memberUsers.map((m) => m.id)])];
+    const normalizedCode = teamCode.trim().toUpperCase();
 
     const group = await prisma.facultyGroup.create({
       data: {
-        name: title,
-        projectTitle: title,
-        teamCode,
-        advisorId: adviserId,
-        members: { connect: memberIds.map((id) => ({ id })) },
+        name:         projectTitle.trim(),
+        projectTitle: projectTitle.trim(),
+        teamCode:     normalizedCode,
+        advisorId:    adviserId,
+        members:      { connect: memberIds.map((id) => ({ id })) },
       },
       include: groupInclude,
     });
@@ -212,11 +201,11 @@ projectsRouter.post('/', async (req: AuthRequest, res: Response): Promise<void> 
   } catch (err: unknown) {
     const prismaErr = err as { code?: string };
     if (prismaErr.code === 'P2002') {
-      res.status(409).json({ error: 'Team code already exists. Choose a different code.' });
+      res.status(409).json({ error: 'That team code is already taken. Please choose a different one.' });
       return;
     }
-    console.error('POST /projects error:', err);
-    res.status(500).json({ error: 'Failed to create group.' });
+    console.error('POST /projects/init error:', err);
+    res.status(500).json({ error: 'Failed to create workspace.' });
   }
 });
 

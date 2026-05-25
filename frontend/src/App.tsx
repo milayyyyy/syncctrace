@@ -5,12 +5,12 @@ import { LoginPage } from './pages/LoginPage';
 import { SignUpPage } from './pages/SignUpPage';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import { SetupPage } from './pages/SetupPage';
+import { DashboardPage } from './pages/DashboardPage';
 import { ArtifactsPage } from './pages/ArtifactsPage';
 import { MatrixPage } from './pages/MatrixPage';
 import { DiagnosticsPage } from './pages/DiagnosticsPage';
 import { FacultyDashboardPage } from './pages/FacultyDashboardPage';
 import { GroupDetailPage } from './pages/GroupDetailPage';
-import { ExportPage } from './pages/ExportPage';
 
 interface ProtectedRouteProps {
   readonly children: React.ReactNode;
@@ -27,16 +27,22 @@ function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
 }
 
 function DefaultRedirect() {
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated, user, groupId } = useAuthStore();
   let to = '/login';
   if (isAuthenticated) {
-    to = user?.role === 'FACULTY' ? '/faculty' : '/setup';
+    if (user?.role === 'FACULTY') to = '/faculty';
+    else if (groupId) to = '/dashboard';
+    else to = '/setup';
   }
   return <Navigate to={to} replace />;
 }
 
+function studentRedirect(groupId: string | null) {
+  return groupId ? '/dashboard' : '/setup';
+}
+
 function App() {
-  const { isAuthenticated, isLoading, user, initFromSession } = useAuthStore();
+  const { isAuthenticated, isLoading, user, groupId, initFromSession } = useAuthStore();
 
   // Restore session on app load — skip on the OAuth callback route
   // (AuthCallbackPage owns initFromSession during that flow)
@@ -65,14 +71,14 @@ function App() {
         <Route
           path="/login"
           element={isAuthenticated
-            ? <Navigate to={user?.role === 'FACULTY' ? '/faculty' : '/setup'} replace />
+            ? <Navigate to={user?.role === 'FACULTY' ? '/faculty' : studentRedirect(groupId)} replace />
             : <LoginPage />}
         />
 
         <Route
           path="/signup"
           element={isAuthenticated
-            ? <Navigate to={user?.role === 'FACULTY' ? '/faculty' : '/setup'} replace />
+            ? <Navigate to={user?.role === 'FACULTY' ? '/faculty' : studentRedirect(groupId)} replace />
             : <SignUpPage />}
         />
 
@@ -80,6 +86,7 @@ function App() {
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
         {/* Student routes */}
+        <Route path="/dashboard" element={<ProtectedRoute requiredRole="STUDENT"><DashboardPage /></ProtectedRoute>} />
         <Route path="/setup" element={<ProtectedRoute requiredRole="STUDENT"><SetupPage /></ProtectedRoute>} />
         <Route path="/artifacts" element={<ProtectedRoute requiredRole="STUDENT"><ArtifactsPage /></ProtectedRoute>} />
         <Route path="/matrix" element={<ProtectedRoute requiredRole="STUDENT"><MatrixPage /></ProtectedRoute>} />
@@ -88,9 +95,6 @@ function App() {
         {/* Faculty routes */}
         <Route path="/faculty" element={<ProtectedRoute requiredRole="FACULTY"><FacultyDashboardPage /></ProtectedRoute>} />
         <Route path="/faculty/group/:id" element={<ProtectedRoute requiredRole="FACULTY"><GroupDetailPage /></ProtectedRoute>} />
-
-        {/* Shared */}
-        <Route path="/export" element={<ProtectedRoute><ExportPage /></ProtectedRoute>} />
 
         {/* Default redirect */}
         <Route path="*" element={<DefaultRedirect />} />

@@ -1,9 +1,8 @@
 ﻿import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Hash, AlertCircle, Users, Upload, GitBranch, GitFork,
-  Download, CheckCircle2, Circle, Copy, Check, Plus, X,
-  FolderOpen, Activity, Sparkles, Trophy, Files
+  Hash, AlertCircle, Plus, X,
+  FolderOpen, Activity
 } from 'lucide-react';
 import { Layout } from '../components/shared/Layout';
 import { Card } from '../components/ui/Card';
@@ -36,37 +35,11 @@ const ARTIFACTS: { key: ArtifactType; short: string }[] = [
   { key: 'SOURCE_CODE', short: 'Source'    },
 ];
 
-/* ─── readiness colours ───────────────────────────────────── */
-const READINESS: Record<string, { label: string; cls: string }> = {
-  READY:           { label: 'Ready',          cls: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' },
-  NEEDS_REVISION:  { label: 'Needs Revision', cls: 'bg-amber-50   text-amber-700   ring-1 ring-amber-200'   },
-  CRITICAL_GAPS:   { label: 'Critical Gaps',  cls: 'bg-red-50     text-red-700     ring-1 ring-red-200'     },
-};
-
 /* ─── helpers ─────────────────────────────────────────────── */
-function scoreColor(n: number) {
-  if (n >= 80) return 'text-emerald-600';
-  if (n >= 60) return 'text-amber-500';
-  return 'text-red-500';
-}
-
-/* ─── sub-components ─────────────────────────────────────── */
-function CopyButton({ text }: { readonly text: string }) {
-  const [copied, setCopied] = useState(false);
-  const handle = () => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-  return (
-    <button
-      onClick={handle}
-      className="flex items-center gap-1 text-[11px] font-semibold text-primary/70 hover:text-primary transition-colors"
-    >
-      {copied ? <Check size={12} /> : <Copy size={12} />}
-      {copied ? 'Copied' : 'Copy'}
-    </button>
-  );
+function auditScoreColor(n: number): string {
+  if (n >= 80) return '#059669';
+  if (n >= 60) return '#D97706';
+  return '#DC2626';
 }
 
 /* ─── workspace card ─────────────────────────────────────── */
@@ -74,157 +47,434 @@ function WorkspaceCard({ group }: { readonly group: ApiGroup }) {
   const navigate = useNavigate();
   const uploadedTypes = new Set(group.artifacts.map((a) => a.type));
   const uploadedCount = uploadedTypes.size;
-  const latest = group.auditResults[0];
+  const latest   = group.auditResults[0];
   const students = group.members.filter((m) => m.role === 'STUDENT');
 
   return (
-    <Card className="border-gray-100 hover:border-primary/30 hover:shadow-xl hover:-translate-y-1 active:scale-[0.998] transition-all duration-300 relative overflow-hidden bg-white shadow-card group">
-      {/* Decorative gradient highlight on card hover */}
-      <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-primary via-amber-400 to-secondary opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-      
-      {/* Header row */}
-      <div className="flex items-start justify-between gap-4 mb-5">
-        <div className="flex items-start gap-3">
-          <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/15 group-hover:scale-105 transition-all duration-300">
-            <FolderOpen size={20} className="text-primary" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] font-bold text-primary/80 bg-primary/8 px-2.5 py-0.5 rounded-full border border-primary/15 uppercase tracking-wider shadow-sm">
-                {group.name}
-              </span>
-              {group.projectTitle && (
-                <h3 className="text-[15px] font-bold text-gray-900 group-hover:text-primary transition-colors duration-200">{group.projectTitle}</h3>
-              )}
-              {!group.projectTitle && (
-                <h3 className="text-[15px] font-semibold text-gray-400 italic">No project title yet</h3>
-              )}
-            </div>
-            <div className="flex items-center gap-2 mt-1.5">
-              <span className="font-mono text-[12px] text-gray-400 tracking-wider bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5">{group.teamCode}</span>
-              <CopyButton text={group.teamCode} />
-            </div>
-          </div>
-        </div>
+    <article style={{
+      backgroundColor: '#ffffff',
+      borderRadius: '20px',
+      border: '1px solid #e2e8f0',
+      boxShadow: '0 4px 24px rgba(30,58,95,0.09)',
+      overflow: 'hidden',
+      display: 'flex',
+      flexDirection: 'column',
+    }}>
 
-        {/* Audit score */}
-        {latest ? (
-          <div className="text-right shrink-0">
-            <p className={`text-2xl font-extrabold tabular-nums tracking-tight filter drop-shadow-sm ${scoreColor(latest.overallScore)}`}>
-              {latest.overallScore.toFixed(1)}%
+      {/* ── Dark header ─────────────────────────────── */}
+      <div style={{
+        background: 'linear-gradient(135deg, #0B1521 0%, #1E3A5F 100%)',
+        padding: '20px 22px 18px',
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        {/* Subtle grid overlay */}
+        <div style={{
+          position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.04,
+          backgroundImage: 'linear-gradient(rgba(255,255,255,0.9) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.9) 1px,transparent 1px)',
+          backgroundSize: '24px 24px',
+        }} />
+        {/* Gold glow orb */}
+        <div style={{
+          position: 'absolute', top: '-24px', right: '-24px', width: '100px', height: '100px',
+          background: 'radial-gradient(circle,rgba(212,175,55,0.28) 0%,transparent 70%)',
+          borderRadius: '50%', pointerEvents: 'none',
+        }} />
+
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: '16px', fontWeight: 800, color: '#ffffff', margin: 0, letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {group.projectTitle || <em style={{ color: '#475569', fontStyle: 'italic', fontWeight: 500 }}>Untitled Project</em>}
             </p>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shadow-inner-sm uppercase tracking-wide ${READINESS[latest.readinessStatus]?.cls ?? ''}`}>
-              {READINESS[latest.readinessStatus]?.label ?? latest.readinessStatus}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '8px' }}>
+              <span style={{
+                fontSize: '10px', fontWeight: 700, color: '#D4AF37',
+                backgroundColor: 'rgba(212,175,55,0.13)', border: '1px solid rgba(212,175,55,0.28)',
+                borderRadius: '6px', padding: '2px 8px', letterSpacing: '0.03em',
+              }}>{group.name}</span>
+              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 500 }}>
+                {students.length} member{students.length === 1 ? '' : 's'}
+              </span>
+            </div>
           </div>
-        ) : (
-          <span className="text-[11px] bg-slate-50 border border-slate-100 text-gray-400 px-2.5 py-1 rounded-full font-semibold shrink-0">Not audited yet</span>
-        )}
-      </div>
 
-      {/* Artifact progress */}
-      <div className="mb-5">
-        <div className="flex items-center justify-between mb-2.5">
-          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.07em]">
-            Artifact Progress
-          </p>
-          <p className="text-[11px] font-extrabold text-primary-dark">
-            {uploadedCount} / {ARTIFACTS.length} uploaded
-          </p>
-        </div>
-        {/* Progress bar */}
-        <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mb-3.5">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-primary via-[#fbbf24] to-primary/80 transition-all duration-500 shadow-sm"
-            style={{ width: `${(uploadedCount / ARTIFACTS.length) * 100}%` }}
-          />
-        </div>
-        {/* Checklist pills */}
-        <div className="flex flex-wrap gap-1.5">
-          {ARTIFACTS.map(({ key, short }) => {
-            const done = uploadedTypes.has(key);
-            return (
-              <div
-                key={key}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-[11.5px] font-semibold border transition-all duration-300 transform hover:scale-[1.03] cursor-default shadow-inner-sm ${
-                  done
-                    ? 'bg-emerald-50/80 border-emerald-200/60 text-emerald-700 hover:border-emerald-300'
-                    : 'bg-gray-50/50 border-gray-100 text-gray-400'
-                }`}
-              >
-                {done
-                  ? <CheckCircle2 size={11} className="text-emerald-500 animate-pulse" />
-                  : <Circle size={11} className="text-gray-300" />
-                }
-                {short}
-              </div>
-            );
-          })}
+          {/* Score badge */}
+          {latest ? (
+            <div style={{
+              textAlign: 'center', flexShrink: 0,
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '14px', padding: '10px 16px',
+              backdropFilter: 'blur(8px)',
+            }}>
+              <p style={{ fontSize: '24px', fontWeight: 900, margin: 0, color: auditScoreColor(latest.overallScore), lineHeight: 1, letterSpacing: '-0.03em' }}>
+                {latest.overallScore.toFixed(0)}<span style={{ fontSize: '13px', fontWeight: 700 }}>%</span>
+              </p>
+              <p style={{ fontSize: '8px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '5px 0 0' }}>Score</p>
+            </div>
+          ) : (
+            <span style={{
+              fontSize: '10px', fontWeight: 600, color: '#475569',
+              background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '10px', padding: '6px 12px', flexShrink: 0, alignSelf: 'flex-start',
+            }}>No audit</span>
+          )}
         </div>
       </div>
 
-      {/* Members */}
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-2">
-          <Users size={13} className="text-gray-300" />
-          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.07em]">
-            Team Members
-          </p>
+      {/* ── Body ────────────────────────────────────── */}
+      <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: '16px', flex: 1 }}>
+
+        {/* Artifact segments */}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <span style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Artifacts</span>
+            <span style={{
+              fontSize: '11px', fontWeight: 800, color: '#1E3A5F',
+              backgroundColor: '#eff6ff', borderRadius: '6px', padding: '2px 9px',
+            }}>{uploadedCount} / {ARTIFACTS.length}</span>
+          </div>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            {ARTIFACTS.map(({ key, short }) => {
+              const done = uploadedTypes.has(key);
+              return (
+                <div key={key} title={short} style={{
+                  flex: 1, height: '8px', borderRadius: '4px',
+                  background: done ? 'linear-gradient(90deg,#c9a227,#D4AF37)' : '#e9eef5',
+                  boxShadow: done ? '0 1px 6px rgba(212,175,55,0.45)' : 'none',
+                  transition: 'background 0.3s, box-shadow 0.3s',
+                }} />
+              );
+            })}
+          </div>
+          <div style={{ height: '3px', borderRadius: '99px', overflow: 'hidden', backgroundColor: '#f1f5f9', marginTop: '8px' }}>
+            <div style={{
+              height: '100%', borderRadius: '99px', transition: 'width 0.5s',
+              width: `${(uploadedCount / ARTIFACTS.length) * 100}%`,
+              background: 'linear-gradient(90deg,#1E3A5F,#D4AF37)',
+            }} />
+          </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <div className="flex -space-x-1.5">
-            {students.slice(0, 5).map((m) => (
-              <div
-                key={m.id}
-                title={m.name}
-                className="w-7 h-7 rounded-full bg-gradient-to-br from-primary to-primary-light flex items-center justify-center text-white text-[10px] font-bold border-2 border-white shadow-md transform hover:translate-y-[-2px] transition-transform duration-150 cursor-pointer"
-              >
-                {m.name.charAt(0).toUpperCase()}
-              </div>
-            ))}
-            {students.length > 5 && (
-              <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-gray-500 text-[9px] font-bold border-2 border-white shadow">
-                +{students.length - 5}
-              </div>
+
+        {/* Footer: avatars + actions */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', paddingTop: '12px', borderTop: '1px solid #f1f5f9' }}>
+          {/* Avatar stack */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ display: 'flex' }}>
+              {students.slice(0, 4).map((m, i) => (
+                <div key={m.id} title={m.name} style={{
+                  width: '30px', height: '30px', borderRadius: '50%',
+                  background: 'linear-gradient(135deg,#1E3A5F,#2d5a9e)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '11px', fontWeight: 800, color: '#D4AF37',
+                  border: '2px solid #fff', marginLeft: i === 0 ? 0 : '-8px',
+                  boxShadow: '0 1px 4px rgba(30,58,95,0.2)',
+                }}>
+                  {m.name.charAt(0).toUpperCase()}
+                </div>
+              ))}
+            </div>
+            {students.length > 4 && (
+              <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, marginLeft: '2px' }}>+{students.length - 4}</span>
             )}
           </div>
-          <span className="text-[12px] text-gray-400 ml-1 font-medium">
-            {students.length} member{students.length === 1 ? '' : 's'}
-          </span>
+
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: '5px' }}>
+            {([
+              { label: 'Artifacts', path: '/artifacts' },
+              { label: 'Audit',     path: '/matrix'    },
+              { label: 'Export',    path: '/export'    },
+            ] as const).map(({ label, path }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => navigate(path)}
+                style={{
+                  fontSize: '11px', fontWeight: 700, color: '#1E3A5F',
+                  backgroundColor: '#f8fafc', border: '1px solid #e2e8f0',
+                  borderRadius: '8px', padding: '5px 11px', cursor: 'pointer',
+                  letterSpacing: '0.01em',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-
-      {/* Actions */}
-      <div className="flex gap-2 pt-4 border-t border-gray-100">
-        <Button size="sm" className="flex-1 hover:scale-[1.02] active:scale-[0.98] transition-transform" onClick={() => navigate('/artifacts')}>
-          <Upload size={13} />
-          Artifacts
-        </Button>
-        <button
-          onClick={() => navigate('/matrix')}
-          className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-gray-200 text-[12.5px] font-semibold text-gray-600 hover:border-primary/40 hover:text-primary hover:bg-primary/[0.02] hover:scale-[1.02] active:scale-[0.98] transition-all"
-        >
-          <GitBranch size={13} />
-          Audit
-        </button>
-        <button
-          onClick={() => navigate('/diagnostics')}
-          className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-gray-200 text-[12.5px] font-semibold text-gray-600 hover:border-primary/40 hover:text-primary hover:bg-primary/[0.02] hover:scale-[1.02] active:scale-[0.98] transition-all"
-        >
-          <GitFork size={13} />
-          Gaps
-        </button>
-        <button
-          onClick={() => navigate('/export')}
-          className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-gray-200 text-[12.5px] font-semibold text-gray-600 hover:border-primary/40 hover:text-primary hover:bg-primary/[0.02] hover:scale-[1.02] active:scale-[0.98] transition-all"
-        >
-          <Download size={13} />
-        </button>
-      </div>
-    </Card>
+    </article>
   );
 }
 
+/* ─── init workspace modal ───────────────────────────────── */
+function InitModal({
+  onClose,
+  onCreated,
+}: {
+  readonly onClose: () => void;
+  readonly onCreated: (group: ApiGroup) => void;
+}) {
+  const { setGroupId } = useAuthStore();
+  const [projectTitle, setProjectTitle] = useState('');
+  const [teamCode, setTeamCode]         = useState('');
+  const [adviserId, setAdviserId]       = useState('');
+  const emailKeyRef = React.useRef(1);
+  const [memberEmails, setMemberEmails] = useState<{ key: number; value: string }[]>([{ key: 0, value: '' }]);
+  const [faculty, setFaculty]           = useState<{ id: string; name: string; email: string }[]>([]);
+  const [loading, setLoading]           = useState(false);
+  const [errors, setErrors]             = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    api.get('/api/users/faculty')
+      .then((res) => setFaculty(res.data.faculty ?? []))
+      .catch(() => {});
+  }, []);
+
+  const validate = (): Record<string, string> => {
+    const e: Record<string, string> = {};
+    if (!projectTitle.trim())
+      e.projectTitle = 'Project title is required.';
+    if (!teamCode.trim())
+      e.teamCode = 'Team code is required.';
+    else if (!/^[A-Z0-9-]+$/i.test(teamCode.trim()))
+      e.teamCode = 'Only letters, numbers, and hyphens allowed.';
+    if (!adviserId)
+      e.adviserId = 'Please select a faculty adviser.';
+    const bad = memberEmails.filter((item) => item.value.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item.value.trim()));
+    if (bad.length > 0)
+      e.memberEmails = 'One or more email addresses are invalid.';
+    return e;
+  };
+
+  const handleSubmit = async (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    const errs = validate();
+    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+    setLoading(true);
+    setErrors({});
+    try {
+      const res = await api.post('/api/projects/init', {
+        projectTitle: projectTitle.trim(),
+        teamCode:     teamCode.trim().toUpperCase(),
+        adviserId,
+        memberEmails: memberEmails.filter((item) => item.value.trim()).map((item) => item.value.trim()),
+      });
+      setGroupId(res.data.group.id);
+      onCreated(res.data.group as ApiGroup);
+    } catch (err: unknown) {
+      const axErr = err as { response?: { data?: { error?: string } } };
+      setErrors({ form: axErr.response?.data?.error ?? 'Failed to create workspace.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const addEmail    = () => {
+    const key = emailKeyRef.current++;
+    setMemberEmails((prev) => [...prev, { key, value: '' }]);
+  };
+  const updateEmail = (key: number, val: string) =>
+    setMemberEmails((prev) => prev.map((item) => (item.key === key ? { ...item, value: val } : item)));
+  const removeEmail = (key: number) =>
+    setMemberEmails((prev) => prev.filter((item) => item.key !== key));
+
+  const steps = [
+    { n: 1, label: 'Project' },
+    { n: 2, label: 'Team Code' },
+    { n: 3, label: 'Adviser' },
+    { n: 4, label: 'Members' },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
+      <dialog
+        className="relative w-full max-w-lg flex flex-col max-h-[90vh] rounded-3xl overflow-hidden shadow-2xl bg-transparent p-0 m-auto"
+        open
+        aria-modal="true"
+      >
+        {/* Dark hero header */}
+        <div
+          className="px-7 py-6 shrink-0"
+          style={{ background: 'linear-gradient(135deg, #0B1521 0%, #162D4A 60%, #1E3A5F 100%)' }}
+        >
+          <div className="flex items-start justify-between mb-5">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-brand-gold/15 border border-brand-gold/25 flex items-center justify-center shrink-0">
+                <FolderOpen size={22} className="text-brand-gold" />
+              </div>
+              <div>
+                <p className="text-[9px] font-black text-white/25 uppercase tracking-[0.25em] mb-1">New Workspace</p>
+                <h2 className="text-[18px] font-black text-white tracking-tight">Initialize Project Workspace</h2>
+                <p className="text-[11px] text-white/35 font-semibold mt-0.5">Create your capstone group from scratch</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/50 hover:text-white transition-all shrink-0"
+              aria-label="Close"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          {/* Step track */}
+          <div className="flex items-center gap-1">
+            {steps.map(({ n, label }, idx) => (
+              <React.Fragment key={n}>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-5 h-5 rounded-full bg-white/15 border border-white/20 flex items-center justify-center shrink-0">
+                    <span className="text-[9px] font-black text-white/70">{n}</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-white/45 whitespace-nowrap">{label}</span>
+                </div>
+                {idx < steps.length - 1 && <div className="flex-1 h-px bg-white/10" />}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+
+        {/* Scrollable form body */}
+        <form onSubmit={handleSubmit} className="bg-white px-7 py-5 space-y-4 overflow-y-auto flex-1">
+
+          {/* 1 · Project Title */}
+          <div>
+            <label htmlFor="init-title" className="block text-[11px] font-black text-brand-navy/40 uppercase tracking-[0.12em] mb-1.5">
+              Project Title <span className="text-red-400">*</span>
+            </label>
+            <input
+              id="init-title"
+              value={projectTitle}
+              onChange={(e) => { setProjectTitle(e.target.value); setErrors((p) => ({ ...p, projectTitle: '' })); }}
+              placeholder="e.g. AI-Powered Traceability System"
+              className={`w-full px-3.5 py-2.5 border rounded-xl text-[13px] text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all bg-white ${errors.projectTitle ? 'border-red-300' : 'border-gray-200'}`}
+            />
+            {errors.projectTitle && (
+              <p className="text-[11px] text-red-500 mt-1 flex items-center gap-1">
+                <AlertCircle size={10} />{errors.projectTitle}
+              </p>
+            )}
+          </div>
+
+          {/* 2 · Team Code */}
+          <div>
+            <label htmlFor="init-code" className="block text-[11px] font-black text-brand-navy/40 uppercase tracking-[0.12em] mb-1.5">
+              Team Code <span className="text-red-400">*</span>
+            </label>
+            <input
+              id="init-code"
+              value={teamCode}
+              onChange={(e) => { setTeamCode(e.target.value.toUpperCase()); setErrors((p) => ({ ...p, teamCode: '' })); }}
+              placeholder="e.g. G4-2025A"
+              className={`w-full px-3.5 py-2.5 border rounded-xl text-[13px] font-mono text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all bg-white tracking-wider ${errors.teamCode ? 'border-red-300' : 'border-gray-200'}`}
+            />
+            <p className="text-[11px] text-gray-400 mt-1">A unique identifier your teammates will use to join (e.g. G4-2025A).</p>
+            {errors.teamCode && (
+              <p className="text-[11px] text-red-500 mt-1 flex items-center gap-1">
+                <AlertCircle size={10} />{errors.teamCode}
+              </p>
+            )}
+          </div>
+
+          {/* 3 · Faculty Adviser */}
+          <div>
+            <label htmlFor="init-adviser" className="block text-[11px] font-black text-brand-navy/40 uppercase tracking-[0.12em] mb-1.5">
+              Faculty Adviser <span className="text-red-400">*</span>
+            </label>
+            {faculty.length === 0 ? (
+              <div className="flex items-center gap-2 px-3.5 py-2.5 border border-gray-100 rounded-xl bg-gray-50">
+                <div className="w-3.5 h-3.5 border-2 border-gray-300 border-t-primary rounded-full animate-spin" />
+                <span className="text-[12px] text-gray-400">Loading advisers…</span>
+              </div>
+            ) : (
+              <select
+                id="init-adviser"
+                value={adviserId}
+                onChange={(e) => { setAdviserId(e.target.value); setErrors((p) => ({ ...p, adviserId: '' })); }}
+                className={`w-full px-3.5 py-2.5 border rounded-xl text-[13px] text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all bg-white ${errors.adviserId ? 'border-red-300' : 'border-gray-200'}`}
+              >
+                <option value="">Select an adviser…</option>
+                {faculty.map((f) => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </select>
+            )}
+            {errors.adviserId && (
+              <p className="text-[11px] text-red-500 mt-1 flex items-center gap-1">
+                <AlertCircle size={10} />{errors.adviserId}
+              </p>
+            )}
+          </div>
+
+          {/* 4 · Team Member Emails */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[11px] font-black text-brand-navy/40 uppercase tracking-[0.12em]">
+                Team Members{' '}
+                <span className="text-gray-300 normal-case font-normal">(Google emails)</span>
+              </label>
+              <button
+                type="button"
+                onClick={addEmail}
+                className="flex items-center gap-1 text-[11px] font-bold text-primary hover:text-primary-dark transition-colors"
+              >
+                <Plus size={11} />Add
+              </button>
+            </div>
+            <div className="space-y-2">
+              {memberEmails.map((item) => (
+                <div key={item.key} className="flex items-center gap-2">
+                  <input
+                    type="email"
+                    value={item.value}
+                    onChange={(e) => { updateEmail(item.key, e.target.value); setErrors((p) => ({ ...p, memberEmails: '' })); }}
+                    placeholder="member@gmail.com"
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-[12.5px] text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all bg-white"
+                  />
+                  {memberEmails.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeEmail(item.key)}
+                      className="text-gray-300 hover:text-red-400 transition-colors p-1 shrink-0"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {errors.memberEmails && (
+              <p className="text-[11px] text-red-500 mt-1.5 flex items-center gap-1">
+                <AlertCircle size={10} />{errors.memberEmails}
+              </p>
+            )}
+            <p className="text-[11px] text-gray-400 mt-1.5">
+              Only registered Google accounts will be added; unknown emails are skipped gracefully.
+            </p>
+          </div>
+
+          {/* Form-level error */}
+          {errors.form && (
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-100">
+              <AlertCircle size={13} className="text-red-500 shrink-0 mt-0.5" />
+              <p className="text-[12px] text-red-700">{errors.form}</p>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-2 pt-1 pb-2">
+            <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
+            <Button type="submit" loading={loading} className="flex-1">
+              <FolderOpen size={14} />
+              Create Workspace
+            </Button>
+          </div>
+        </form>
+      </dialog>
+    </div>
+  );
+}
 /* ─── join form modal ────────────────────────────────────── */
 function JoinModal({
   onClose,
@@ -260,23 +510,44 @@ function JoinModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Hash size={15} className="text-primary" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
+      <dialog
+        className="relative w-full max-w-md flex flex-col rounded-3xl overflow-hidden shadow-2xl bg-transparent p-0 m-auto"
+        open
+        aria-modal="true"
+      >
+        {/* Dark hero header */}
+        <div
+          className="px-7 pt-7 pb-6 shrink-0"
+          style={{ background: 'linear-gradient(135deg, #0B1521 0%, #162D4A 60%, #1E3A5F 100%)' }}
+        >
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-brand-gold/15 border border-brand-gold/25 flex items-center justify-center shrink-0">
+                <Hash size={22} className="text-brand-gold" />
+              </div>
+              <div>
+                <p className="text-[9px] font-black text-white/25 uppercase tracking-[0.25em] mb-1">Team Code</p>
+                <h2 className="text-[18px] font-black text-white tracking-tight">Join a Workspace</h2>
+                <p className="text-[11px] text-white/35 font-semibold mt-0.5">Enter your section code to connect</p>
+              </div>
             </div>
-            <h2 className="text-[15px] font-bold text-gray-900">Join a Workspace</h2>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/50 hover:text-white transition-all shrink-0"
+              aria-label="Close"
+            >
+              <X size={16} />
+            </button>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 transition-colors">
-            <X size={18} />
-          </button>
         </div>
 
-        <form onSubmit={handleJoin} className="px-6 py-5 space-y-4">
+        {/* Form body */}
+        <form onSubmit={handleJoin} className="bg-white px-7 py-6 space-y-4">
           <div>
-            <label htmlFor="jm-code" className="block text-[11.5px] font-semibold text-gray-500 uppercase tracking-[0.06em] mb-1.5">
+            <label htmlFor="jm-code" className="block text-[11px] font-black text-brand-navy/40 uppercase tracking-[0.12em] mb-1.5">
               Section Code <span className="text-red-400">*</span>
             </label>
             <input
@@ -285,12 +556,12 @@ function JoinModal({
               value={teamCode}
               onChange={(e) => { setTeamCode(e.target.value); setError(null); }}
               placeholder="e.g. G1-X4K2AB"
-              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-[13px] font-mono text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all bg-white tracking-wider"
+              className="w-full px-3.5 py-3 border border-gray-200 rounded-xl text-[15px] font-mono text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all bg-white tracking-widest"
             />
           </div>
 
           <div>
-            <label htmlFor="jm-title" className="block text-[11.5px] font-semibold text-gray-500 uppercase tracking-[0.06em] mb-1.5">
+            <label htmlFor="jm-title" className="block text-[11px] font-black text-brand-navy/40 uppercase tracking-[0.12em] mb-1.5">
               Project Title
             </label>
             <input
@@ -301,23 +572,23 @@ function JoinModal({
               className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-[13px] text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all bg-white"
             />
             <p className="text-[11px] text-gray-400 mt-1.5">
-              Only applied if the group doesn't have a title yet — the first member to join sets it.
+              Only applied if the group does not have a title yet — the first member to join sets it.
             </p>
           </div>
 
           {error && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-100">
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-100">
               <AlertCircle size={13} className="text-red-500 shrink-0 mt-0.5" />
               <p className="text-[12px] text-red-700">{error}</p>
             </div>
           )}
 
-          <div className="flex gap-2 pt-1">
+          <div className="flex gap-2 pt-1 pb-1">
             <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
             <Button type="submit" loading={loading} className="flex-1">Join Workspace</Button>
           </div>
         </form>
-      </div>
+      </dialog>
     </div>
   );
 }
@@ -328,6 +599,7 @@ export const SetupPage: React.FC = () => {
   const [groups, setGroups]           = useState<ApiGroup[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
   const [showJoin, setShowJoin]       = useState(false);
+  const [showInit, setShowInit]       = useState(false);
 
   const fetchGroups = useCallback(async () => {
     try {
@@ -349,16 +621,22 @@ export const SetupPage: React.FC = () => {
     setShowJoin(false);
   };
 
+  const handleCreated = (group: ApiGroup) => {
+    setGroups((prev) => {
+      const exists = prev.some((g) => g.id === group.id);
+      return exists ? prev.map((g) => g.id === group.id ? group : g) : [group, ...prev];
+    });
+    setShowInit(false);
+  };
+
   /* Loading */
   if (pageLoading) {
     return (
-      <Layout title="Workspace" subtitle="Your capstone projects and team overview">
-        <div className="flex items-center justify-center mt-24">
+      <Layout title="My Workspaces" subtitle="All your capstone projects and team groups" badge="Workspaces" heroIcon={<FolderOpen size={26} />}>
           <div className="flex flex-col items-center gap-3">
             <div className="w-8 h-8 border-2 border-gray-200 border-t-primary rounded-full animate-spin" />
             <p className="text-sm text-gray-400">Loading workspace…</p>
           </div>
-        </div>
       </Layout>
     );
   }
@@ -366,23 +644,33 @@ export const SetupPage: React.FC = () => {
   /* No groups → inline join prompt */
   if (groups.length === 0) {
     return (
-      <Layout title="Workspace" subtitle="Your capstone projects and team overview">
-        <div className="max-w-md mx-auto mt-16">
+      <Layout title="My Workspaces" subtitle="All your capstone projects and team groups" badge="Workspaces" heroIcon={<FolderOpen size={26} />}>
           <Card className="text-center py-14">
             <div className="w-16 h-16 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center mx-auto mb-5">
               <Activity size={28} className="text-slate-300" />
             </div>
             <h2 className="text-[16px] font-bold text-gray-800 mb-2">No workspace yet</h2>
             <p className="text-[13px] text-gray-400 mb-7 leading-relaxed">
-              Ask your adviser for a section code and join your capstone group to get started.
+              Set up your capstone project workspace as team leader, or join an existing group with a team code.
             </p>
-            <Button onClick={() => setShowJoin(true)}>
-              <Plus size={15} />
-              Join a Workspace
-            </Button>
+            <div className="flex flex-col items-center gap-3 w-full">
+              <Button onClick={() => setShowInit(true)} className="w-full">
+                <FolderOpen size={15} />
+                Initialize Workspace
+              </Button>
+              <button
+                type="button"
+                onClick={() => setShowJoin(true)}
+                className="text-[12.5px] font-semibold text-gray-500 hover:text-primary transition-colors"
+              >
+                Already have a team code? Join existing →
+              </button>
+            </div>
           </Card>
-        </div>
 
+        {showInit && (
+          <InitModal onClose={() => setShowInit(false)} onCreated={handleCreated} />
+        )}
         {showJoin && (
           <JoinModal onClose={() => setShowJoin(false)} onJoined={handleJoined} />
         )}
@@ -391,82 +679,37 @@ export const SetupPage: React.FC = () => {
   }
 
   /* Has groups → overview */
-  const totalArtifacts = groups.reduce((acc, g) => acc + g.artifacts.length, 0);
-  const auditedGroups = groups.filter((g) => g.auditResults.length > 0);
-  const avgScore = auditedGroups.length > 0
-    ? auditedGroups.reduce((acc, g) => acc + (g.auditResults[0]?.overallScore ?? 0), 0) / auditedGroups.length
-    : null;
 
   return (
     <Layout
-      title="Workspace"
-      subtitle="Your capstone projects and team overview"
+      title="My Workspaces"
+      subtitle="All your capstone projects and team groups"
+      badge="Workspaces"
+      heroIcon={<FolderOpen size={26} />}
       headerAction={
-        <Button onClick={() => setShowJoin(true)} className="hover:scale-105 active:scale-95 transition-transform duration-150">
-          <Plus size={15} />
-          Join Another
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowInit(true)} className="hover:scale-105 active:scale-95 transition-transform duration-150">
+            <FolderOpen size={15} />
+            New Workspace
+          </Button>
+          <Button onClick={() => setShowJoin(true)} className="hover:scale-105 active:scale-95 transition-transform duration-150">
+            <Plus size={15} />
+            Join Another
+          </Button>
+        </div>
       }
     >
       <div className="space-y-6">
-        {/* Welcome greeting banner card */}
-        <div className="relative overflow-hidden rounded-3xl bg-[#0f172a] text-white p-6 shadow-xl border border-slate-800">
-          <div className="absolute inset-0 pointer-events-none">
-            <div className="absolute top-0 right-0 w-80 h-80 bg-[radial-gradient(circle_at_70%_10%,rgba(245,158,11,0.15)_0%,transparent_60%)]" />
-            <div className="absolute -bottom-10 left-10 w-60 h-60 bg-[radial-gradient(circle_at_30%_90%,rgba(14,165,233,0.1)_0%,transparent_60%)]" />
-            <div className="absolute inset-0 opacity-[0.02]" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.8) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.8) 1px, transparent 1px)', backgroundSize: '30px 40px' }} />
-          </div>
-
-          <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="space-y-2">
-              <div className="inline-flex items-center gap-1.5 bg-white/[0.07] border border-white/[0.1] rounded-full px-3 py-1">
-                <Sparkles size={12} className="text-amber-400 animate-pulse" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-amber-300">Continuous Assessment Active</span>
-              </div>
-              <h2 className="text-xl md:text-2xl font-extrabold tracking-tight">
-                Welcome back to <span className="text-amber-400">SyncTrace</span>
-              </h2>
-              <p className="text-xs text-slate-400 max-w-md leading-relaxed">
-                Your sequence auditing progress is continually monitored. Submit matching artifacts and target all gap analyses to maximize capstone readiness scores!
-              </p>
-            </div>
-
-            {/* Quick Stat indicators */}
-            <div className="grid grid-cols-3 gap-3 md:w-auto w-full shrink-0">
-              <div className="bg-white/[0.04] border border-white/[0.06] p-3 rounded-2xl text-center min-w-[90px] backdrop-blur-sm">
-                <div className="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto mb-1.5">
-                  <Activity size={13} />
-                </div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Workspaces</p>
-                <p className="text-md font-extrabold text-white mt-0.5">{groups.length}</p>
-              </div>
-              <div className="bg-white/[0.04] border border-white/[0.06] p-3 rounded-2xl text-center min-w-[90px] backdrop-blur-sm">
-                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto mb-1.5">
-                  <Files size={13} />
-                </div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Artifacts</p>
-                <p className="text-md font-extrabold text-white mt-0.5">{totalArtifacts}</p>
-              </div>
-              <div className="bg-white/[0.04] border border-white/[0.06] p-3 rounded-2xl text-center min-w-[90px] backdrop-blur-sm">
-                <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto mb-1.5">
-                  <Trophy size={13} />
-                </div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Avg Score</p>
-                <p className="text-md font-extrabold text-white mt-0.5">
-                  {typeof avgScore === 'number' ? `${avgScore.toFixed(0)}%` : '—'}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-5">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '16px' }}>
           {groups.map((group) => (
             <WorkspaceCard key={group.id} group={group} />
           ))}
         </div>
       </div>
 
+      {showInit && (
+        <InitModal onClose={() => setShowInit(false)} onCreated={handleCreated} />
+      )}
       {showJoin && (
         <JoinModal onClose={() => setShowJoin(false)} onJoined={handleJoined} />
       )}

@@ -2,134 +2,205 @@ import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutGrid,
-  Upload,
-  GitBranch,
-  GitFork,
-  Download,
+  FileText,
+  ShieldCheck,
+  Search,
   Users,
   Activity,
-  ChevronsUpDown,
+  Settings,
+  LogOut,
+  FolderOpen,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
-import { cn } from '../../lib/utils';
 
-interface NavItem {
-  to: string;
-  icon: React.ReactNode;
-  label: string;
-  end?: boolean;
-}
-
-const STUDENT_NAV: NavItem[] = [
-  { to: '/setup',       icon: <LayoutGrid size={17} />, label: 'Dashboard',    end: true },
-  { to: '/artifacts',   icon: <Upload     size={17} />, label: 'Artifacts',    end: true },
-  { to: '/matrix',      icon: <GitBranch  size={17} />, label: 'Audit',        end: true },
-  { to: '/diagnostics', icon: <GitFork    size={17} />, label: 'Gap Analysis', end: true },
-  { to: '/export',      icon: <Download   size={17} />, label: 'Export',       end: true },
+const STUDENT_SECTIONS = [
+  {
+    label: 'WORKSPACE',
+    items: [
+      { to: '/dashboard',   icon: <LayoutGrid  size={18} strokeWidth={2.5} />, label: 'Dashboard'  },
+      { to: '/setup',       icon: <FolderOpen  size={18} strokeWidth={2.5} />, label: 'Workspaces' },
+      { to: '/artifacts',   icon: <FileText    size={18} strokeWidth={2.5} />, label: 'Artifacts'  },
+    ]
+  },
+  {
+    label: 'AI PROTOCOL',
+    items: [
+      { to: '/matrix',      icon: <ShieldCheck size={18} strokeWidth={2.5} />, label: 'Audit' },
+      { to: '/diagnostics', icon: <Search      size={18} strokeWidth={2.5} />, label: 'Gap Analysis' },
+    ]
+  },
 ];
 
-const FACULTY_NAV: NavItem[] = [
-  { to: '/faculty', icon: <Users    size={17} />, label: 'My Groups', end: true },
-  { to: '/export',  icon: <Download size={17} />, label: 'Export',    end: true },
+const FACULTY_SECTIONS = [
+  {
+    label: 'MANAGEMENT',
+    items: [
+      { to: '/faculty', icon: <Users    size={18} strokeWidth={2.5} />, label: 'My Groups' },
+    ]
+  },
 ];
 
 export const Sidebar: React.FC = () => {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
-  const navItems = user?.role === 'FACULTY' ? FACULTY_NAV : STUDENT_NAV;
+  const sections = user?.role === 'FACULTY' ? FACULTY_SECTIONS : STUDENT_SECTIONS;
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
-  const initials = user?.name?.charAt(0).toUpperCase() ?? '?';
-
   return (
     <aside
-      className="flex flex-col w-64 h-screen shrink-0 overflow-hidden sticky top-0"
       style={{
-        background: 'linear-gradient(180deg, #0f2044 0%, #162d5a 100%)',
-        boxShadow: '4px 0 24px rgba(0,0,0,0.25)',
-        color: 'white',
+        display: 'flex',
+        flexDirection: 'column',
+        width: '256px',
+        height: '100vh',
+        position: 'sticky',
+        top: 0,
+        overflow: 'hidden',
+        flexShrink: 0,
+        backgroundColor: '#0B1521',
+        boxShadow: '10px 0 50px rgba(0, 0, 0, 0.3)',
+        borderRight: '1px solid rgba(255, 255, 255, 0.06)',
       }}
     >
       {/* Logo */}
-      <div className="flex items-center gap-3 px-5 pt-6 pb-5">
-        <div className="w-9 h-9 rounded-xl bg-amber-400 flex items-center justify-center shrink-0">
-          <Activity size={17} className="text-amber-900" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '32px 24px 28px' }}>
+        <div
+          style={{
+            width: '48px',
+            height: '48px',
+            borderRadius: '14px',
+            backgroundColor: '#D4AF37',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            boxShadow: '0 4px 20px rgba(212, 175, 55, 0.45)',
+          }}
+        >
+          <Activity size={22} color="#0B1521" strokeWidth={3} />
         </div>
         <div>
-          <p className="text-[15px] font-bold text-white leading-tight tracking-tight">SyncTrace</p>
-          <p className="text-[11px] text-white/40 mt-0.5">Academic Audit</p>
+          <p style={{ fontSize: '15px', fontWeight: 900, color: '#ffffff', lineHeight: 1.2, letterSpacing: '0.02em', margin: 0 }}>SyncTrace</p>
+          <p style={{ fontSize: '8px', fontWeight: 700, color: 'rgba(212,175,55,0.5)', letterSpacing: '0.2em', textTransform: 'uppercase', margin: '3px 0 0' }}>
+            {user?.role === 'FACULTY' ? 'Faculty Portal' : 'Student Portal'}
+          </p>
         </div>
       </div>
 
-      {/* Divider */}
-      <div className="mx-4 border-t border-white/[0.08] mb-5" />
-
       {/* Navigation */}
-      <div className="px-3 flex-1">
-        <p className="text-[10px] font-semibold text-white/30 uppercase tracking-[0.14em] px-3 mb-2">
-          Navigation
-        </p>
-        <nav className="space-y-0.5">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium transition-colors duration-100',
-                  isActive
-                    ? 'bg-white/[0.1] text-white'
-                    : 'text-white/60 hover:text-white/85 hover:bg-white/[0.05]',
-                )
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <span className={cn('shrink-0', isActive ? 'text-white' : 'text-white/50')}>
-                    {item.icon}
-                  </span>
-                  <span className="flex-1 tracking-tight">{item.label}</span>
-                </>
-              )}
-            </NavLink>
-          ))}
-        </nav>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
+        {sections.map((section) => (
+          <div key={section.label}>
+            <p style={{
+              fontSize: '9px',
+              fontWeight: 900,
+              color: 'rgba(255,255,255,0.25)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.25em',
+              padding: '0 16px',
+              marginBottom: '8px',
+            }}>
+              {section.label}
+            </p>
+            <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              {section.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end
+                  className={({ isActive }) => isActive ? '__nav-active' : '__nav-idle'}
+                  style={({ isActive }) => ({
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '14px',
+                    padding: '11px 18px',
+                    borderRadius: '14px',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    textDecoration: 'none',
+                    transition: 'all 0.2s ease',
+                    backgroundColor: isActive ? '#D4AF37' : 'transparent',
+                    color: isActive ? '#0B1521' : 'rgba(255,255,255,0.55)',
+                    boxShadow: isActive ? '0 4px 16px rgba(212,175,55,0.35)' : 'none',
+                  })}
+                >
+                  <span style={{ display: 'flex', flexShrink: 0 }}>{item.icon}</span>
+                  <span>{item.label}</span>
+                </NavLink>
+              ))}
+            </nav>
+          </div>
+        ))}
+
+        {/* Account */}
+        <div>
+          <p style={{
+            fontSize: '9px',
+            fontWeight: 900,
+            color: 'rgba(255,255,255,0.25)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.25em',
+            padding: '0 16px',
+            marginBottom: '8px',
+          }}>
+            ACCOUNT
+          </p>
+          <button style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '14px',
+            padding: '11px 18px',
+            borderRadius: '14px',
+            fontSize: '13px',
+            fontWeight: 800,
+            color: 'rgba(255,255,255,0.55)',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+          }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = '#fff'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.55)'; }}
+          >
+            <Settings size={18} strokeWidth={2.5} />
+            <span>Settings</span>
+          </button>
+        </div>
       </div>
 
-      {/* User card */}
-      <div className="px-3 pb-4 pt-3 border-t border-white/[0.08]">
+      {/* Bottom: Logout + Tour */}
+      <div style={{ padding: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', backgroundColor: 'rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
         <button
           onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.07] transition-colors duration-100 text-left"
-          title="Sign out"
+          style={{
+            width: '100%',
+            height: '46px',
+            backgroundColor: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
+            fontSize: '11px',
+            fontWeight: 900,
+            color: 'rgba(255,255,255,0.8)',
+            letterSpacing: '0.12em',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)'; }}
         >
-          {user?.avatarUrl ? (
-            <img
-              src={user.avatarUrl}
-              alt={user?.name ?? 'User'}
-              className="w-8 h-8 rounded-full shrink-0 object-cover"
-              referrerPolicy="no-referrer"
-            />
-          ) : (
-            <div className="w-8 h-8 rounded-full bg-amber-400 flex items-center justify-center text-amber-900 text-[13px] font-bold shrink-0">
-              {initials}
-            </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <p className="text-[13px] font-semibold text-white/80 truncate leading-tight">
-              {user?.name ?? 'User'}
-            </p>
-            <p className="text-[11px] text-white/35 mt-0.5">
-              {user?.role === 'FACULTY' ? 'Adviser' : 'Student'}
-            </p>
-          </div>
-          <ChevronsUpDown size={14} className="text-white/30 shrink-0" />
+          <LogOut size={15} color="#D4AF37" />
+          LOGOUT
         </button>
+
       </div>
     </aside>
   );

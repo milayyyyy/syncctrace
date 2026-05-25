@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ChevronRight, Users, AlertCircle, TrendingUp, CheckCircle2, AlertTriangle, Plus, Copy, X, Hash } from 'lucide-react';
+import {
+  Search, ChevronRight, Users, AlertCircle, TrendingUp, CheckCircle2,
+  AlertTriangle, Loader2, Calendar, Shield,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/shared/Layout';
-import { Card } from '../components/ui/Card';
-import { Badge, readinessToBadge, readinessLabel } from '../components/ui/Badge';
-import { Button } from '../components/ui/Button';
 import type { ReadinessStatus } from '../types';
-import { formatDate } from '../lib/utils';
 import { api } from '../services/api';
 
 interface ApiMember { id: string; name: string; email: string; role: string; }
@@ -20,387 +19,340 @@ interface ApiGroup {
   auditResults: ApiAudit[];
 }
 
-function getHealthColor(score: number): string {
-  if (score >= 80) return 'bg-success';
-  if (score >= 60) return 'bg-warning';
-  return 'bg-critical';
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+function scoreColor(score: number): string {
+  if (score >= 80) return '#059669';
+  if (score >= 60) return '#D4AF37';
+  return '#B91C1C';
 }
 
-function getHealthTextColor(score: number): string {
-  if (score >= 80) return 'text-success';
-  if (score >= 60) return 'text-warning';
-  return 'text-critical';
+function formatAuditDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
+  });
 }
 
-interface HealthBarProps { readonly score: number; }
+function getReadinessLabel(s: ReadinessStatus): string {
+  if (s === 'READY') return 'Ready';
+  if (s === 'NEEDS_REVISION') return 'Needs Revision';
+  return 'Critical Gaps';
+}
 
-function HealthBar({ score }: HealthBarProps) {
-  const color = getHealthColor(score);
-  const textColor = getHealthTextColor(score);
+function getReadinessPill(s: ReadinessStatus): { bg: string; text: string; dot: string } {
+  if (s === 'READY') return { bg: 'rgba(5,150,105,0.1)', text: '#059669', dot: '#059669' };
+  if (s === 'NEEDS_REVISION') return { bg: 'rgba(212,175,55,0.12)', text: '#B45309', dot: '#D4AF37' };
+  return { bg: 'rgba(185,28,28,0.1)', text: '#B91C1C', dot: '#B91C1C' };
+}
+
+// ── GroupCard ─────────────────────────────────────────────────────────────────
+
+interface GroupCardProps {
+  readonly group: ApiGroup;
+  readonly onClick: () => void;
+}
+
+function GroupCard({ group, onClick }: GroupCardProps) {
+  const audit = group.auditResults[0] ?? null;
+  const score = audit?.overallScore ?? 0;
+  const status: ReadinessStatus = audit?.readinessStatus ?? 'NEEDS_REVISION';
+  const pill = getReadinessPill(status);
+  const color = scoreColor(score);
+  const criticals = (audit?.gaps ?? []).filter((g) => g.severity === 'CRITICAL').length;
+  const warnings  = (audit?.gaps ?? []).filter((g) => g.severity === 'HIGH').length;
+  const circ = 2 * Math.PI * 22;
+
   return (
-    <div className="flex items-center gap-2">
-      <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${score}%` }} />
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full text-left bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-md hover:border-brand-navy/15 transition-all duration-200 group overflow-hidden"
+    >
+      <div className="p-6 flex items-center gap-5">
+
+        {/* Score ring */}
+        <div className="shrink-0 relative w-16 h-16">
+          <svg className="w-full h-full -rotate-90" viewBox="0 0 56 56">
+            <circle cx="28" cy="28" r="22" fill="none" stroke="#E2E8F0" strokeWidth="5" />
+            <circle
+              cx="28" cy="28" r="22" fill="none"
+              stroke={color} strokeWidth="5" strokeLinecap="round"
+              strokeDasharray={String(circ)}
+              strokeDashoffset={String(circ * (1 - score / 100))}
+            />
+          </svg>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-[13px] font-black" style={{ color }}>{score.toFixed(0)}%</span>
+          </div>
+        </div>
+
+        {/* Group info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+            <p className="text-[14px] font-black text-brand-navy tracking-tight">{group.projectTitle || group.name}</p>
+            <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md bg-brand-navy/5 text-brand-navy/40">
+              #{group.teamCode}
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-400 font-medium mb-3">{group.name}</p>
+
+          <div className="flex items-center gap-4 flex-wrap">
+            <span
+              className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-xl"
+              style={{ background: pill.bg, color: pill.text }}
+            >
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: pill.dot }} />
+              {getReadinessLabel(status)}
+            </span>
+
+            {criticals > 0 && (
+              <span className="flex items-center gap-1 text-[10px] font-bold text-red-500">
+                <AlertCircle size={11} />
+                {criticals} critical
+              </span>
+            )}
+            {warnings > 0 && (
+              <span className="flex items-center gap-1 text-[10px] font-bold text-amber-500">
+                <AlertTriangle size={11} />
+                {warnings} warning{warnings > 1 ? 's' : ''}
+              </span>
+            )}
+
+            {audit ? (
+              <span className="flex items-center gap-1 text-[10px] font-medium text-gray-400">
+                <Calendar size={10} />
+                {formatAuditDate(audit.auditedAt)}
+              </span>
+            ) : (
+              <span className="text-[10px] font-medium text-gray-400">No audit yet</span>
+            )}
+          </div>
+        </div>
+
+        {/* Member avatars */}
+        <div className="flex -space-x-2 shrink-0">
+          {group.members.slice(0, 4).map((m) => (
+            <div
+              key={m.id}
+              className="w-8 h-8 rounded-full border-2 border-white bg-brand-navy/5 flex items-center justify-center text-[10px] font-black text-brand-navy/40 uppercase"
+            >
+              {m.name.charAt(0)}
+            </div>
+          ))}
+          {group.members.length > 4 && (
+            <div className="w-8 h-8 rounded-full border-2 border-white bg-brand-navy text-white flex items-center justify-center text-[9px] font-black">
+              +{group.members.length - 4}
+            </div>
+          )}
+        </div>
+
+        {/* Arrow */}
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-all duration-200 bg-brand-navy/5 group-hover:bg-brand-navy group-hover:text-white text-brand-navy/30">
+          <ChevronRight size={18} />
+        </div>
       </div>
-      <span className={`text-sm font-bold ${textColor}`}>
-        {score.toFixed(1)}%
-      </span>
-    </div>
+    </button>
   );
 }
 
-const readinessIcon: Record<ReadinessStatus, React.ReactNode> = {
-  READY: <CheckCircle2 size={14} className="text-success" />,
-  NEEDS_REVISION: <AlertTriangle size={14} className="text-warning" />,
-  CRITICAL_GAPS: <AlertCircle size={14} className="text-critical" />,
-};
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export const FacultyDashboardPage: React.FC = () => {
   const navigate = useNavigate();
-  const [search, setSearch] = useState('');
+  const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState<ReadinessStatus | 'ALL'>('ALL');
-  const [groups, setGroups] = useState<ApiGroup[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
-  const [sectionName, setSectionName] = useState('');
-  const [createLoading, setCreateLoading] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [createdCode, setCreatedCode] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [groups, setGroups]             = useState<ApiGroup[]>([]);
+  const [loading, setLoading]           = useState(true);
 
-  const loadGroups = () => {
+  useEffect(() => {
     api.get('/api/projects')
       .then((res) => setGroups(res.data.groups ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  };
-
-  useEffect(() => { loadGroups(); }, []);
-
-  const handleCreate = async (e: React.SyntheticEvent) => {
-    e.preventDefault();
-    setCreateLoading(true);
-    setCreateError(null);
-    try {
-      const res = await api.post('/api/projects', { sectionName });
-      setCreatedCode(res.data.group.teamCode);
-      loadGroups();
-    } catch (err: unknown) {
-      const axErr = err as { response?: { data?: { error?: string } } };
-      setCreateError(axErr.response?.data?.error ?? 'Failed to create group.');
-    } finally {
-      setCreateLoading(false);
-    }
-  };
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(createdCode ?? '');
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const closeModal = () => {
-    setShowCreate(false);
-    setSectionName('');
-    setCreateError(null);
-    setCreatedCode(null);
-    setCopied(false);
-  };
+  }, []);
 
   const filtered = groups.filter((g) => {
-    const latestAudit = g.auditResults[0];
-    const readinessStatus: ReadinessStatus = latestAudit?.readinessStatus ?? 'NEEDS_REVISION';
+    const status: ReadinessStatus = g.auditResults[0]?.readinessStatus ?? 'NEEDS_REVISION';
     const matchSearch =
       (g.projectTitle || g.name).toLowerCase().includes(search.toLowerCase()) ||
       g.teamCode.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === 'ALL' || readinessStatus === statusFilter;
+    const matchStatus = statusFilter === 'ALL' || status === statusFilter;
     return matchSearch && matchStatus;
   });
 
-  const summary = {
-    total: groups.length,
-    ready: groups.filter((g) => g.auditResults[0]?.readinessStatus === 'READY').length,
-    needsRevision: groups.filter((g) => g.auditResults[0]?.readinessStatus === 'NEEDS_REVISION').length,
-    critical: groups.filter((g) => g.auditResults[0]?.readinessStatus === 'CRITICAL_GAPS').length,
+  const totalGroups   = groups.length;
+  const readyCount    = groups.filter((g) => g.auditResults[0]?.readinessStatus === 'READY').length;
+  const revisionCount = groups.filter((g) => g.auditResults[0]?.readinessStatus === 'NEEDS_REVISION').length;
+  const criticalCount = groups.filter((g) => g.auditResults[0]?.readinessStatus === 'CRITICAL_GAPS').length;
+
+  const filterLabels: Array<{ value: ReadinessStatus | 'ALL'; label: string }> = [
+    { value: 'ALL',            label: 'All Groups' },
+    { value: 'READY',          label: 'Ready'      },
+    { value: 'NEEDS_REVISION', label: 'Revision'   },
+    { value: 'CRITICAL_GAPS',  label: 'Critical'   },
+  ];
+
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <div className="flex flex-col items-center justify-center py-24 gap-3">
+          <Loader2 size={32} className="animate-spin text-brand-navy/20" />
+          <p className="text-[13px] font-semibold text-gray-400 animate-pulse">Loading assigned groups…</p>
+        </div>
+      );
+    }
+
+    if (groups.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
+          <div
+            className="w-20 h-20 rounded-3xl flex items-center justify-center mb-2"
+            style={{ background: 'linear-gradient(135deg, #0B1521 0%, #1E3A5F 100%)' }}
+          >
+            <Users size={32} style={{ color: 'rgba(212,175,55,0.6)' }} />
+          </div>
+          <div>
+            <p className="text-[18px] font-black text-brand-navy tracking-tight">No Groups Assigned</p>
+            <p className="text-[13px] text-gray-400 font-medium mt-1.5 max-w-sm leading-relaxed">
+              No student groups are currently assigned to you as faculty adviser. Groups will appear here once students select you during workspace setup.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    if (filtered.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center">
+            <Search size={22} className="text-gray-300" />
+          </div>
+          <p className="text-[15px] font-black text-brand-navy tracking-tight">No Matching Groups</p>
+          <p className="text-[12px] text-gray-400 font-medium">
+            {search
+              ? <>No groups match <span className="font-bold text-gray-600">"{search}"</span> with the selected filter.</>
+              : 'No groups match the selected status filter.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => { setSearch(''); setStatusFilter('ALL'); }}
+            className="mt-1 text-[12px] font-black text-brand-navy/50 hover:text-brand-navy transition-colors underline underline-offset-2"
+          >
+            Clear filters
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3">
+        <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest px-1">
+          {filtered.length} group{filtered.length === 1 ? '' : 's'} found
+        </p>
+        {filtered.map((group) => (
+          <GroupCard
+            key={group.id}
+            group={group}
+            onClick={() => navigate(`/faculty/group/${group.id}`)}
+          />
+        ))}
+      </div>
+    );
   };
 
   return (
     <Layout
       title="Faculty Dashboard"
-      subtitle="Monitor capstone group progress and traceability health"
-      headerAction={
-        <Button onClick={() => setShowCreate(true)}>
-          <Plus size={15} />
-          New Group
-        </Button>
-      }
+      subtitle="Monitor traceability integrity and project readiness across all assigned groups"
+      badge="Adviser Portal"
+      heroIcon={<Users size={26} />}
     >
-      {/* Stat cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
-        {[
-          {
-            label: 'Total Groups',
-            value: summary.total,
-            icon: <Users size={17} />,
-            iconBg: 'bg-indigo-50 border border-indigo-100',
-            iconColor: 'text-indigo-600',
-            valueColor: 'text-slate-900',
-            gradient: 'hover:border-indigo-200 hover:shadow-indigo-50/50',
-          },
-          {
-            label: 'Ready',
-            value: summary.ready,
-            icon: <CheckCircle2 size={17} />,
-            iconBg: 'bg-emerald-50 border border-emerald-100',
-            iconColor: 'text-emerald-600',
-            valueColor: 'text-emerald-600',
-            gradient: 'hover:border-emerald-200 hover:shadow-emerald-50/50',
-          },
-          {
-            label: 'Needs Revision',
-            value: summary.needsRevision,
-            icon: <TrendingUp size={17} />,
-            iconBg: 'bg-amber-50 border border-amber-100',
-            iconColor: 'text-amber-600',
-            valueColor: 'text-amber-600',
-            gradient: 'hover:border-amber-200 hover:shadow-amber-50/50',
-          },
-          {
-            label: 'Critical Gaps',
-            value: summary.critical,
-            icon: <AlertCircle size={17} />,
-            iconBg: 'bg-rose-50 border border-rose-100',
-            iconColor: 'text-rose-600',
-            valueColor: 'text-rose-600',
-            gradient: 'hover:border-rose-200 hover:shadow-rose-50/50',
-          },
-        ].map(({ label, value, icon, iconBg, iconColor, valueColor, gradient }) => (
-          <Card key={label} className={`border-slate-100/90 hover:scale-[1.02] hover:shadow-xl transition-all duration-300 relative overflow-hidden group ${gradient}`}>
-            {/* Background absolute subtle element */}
-            <div className="absolute -right-4 -bottom-4 w-12 h-12 bg-slate-500/[0.02] rounded-full group-hover:scale-[2.5] transition-transform duration-500" />
-            <div className="flex items-start justify-between relative z-10">
-              <div>
-                <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">{label}</p>
-                <p className={`text-3xl font-extrabold tracking-tight ${valueColor}`}>{value}</p>
+      <div className="space-y-5">
+
+        {/* ── HERO SUMMARY PANEL ─────────────────────────────────────────── */}
+        <div
+          className="rounded-3xl overflow-hidden shadow-2xl"
+          style={{ background: 'linear-gradient(135deg, #0B1521 0%, #162D4A 60%, #1E3A5F 100%)' }}
+        >
+          <div className="p-7">
+            <div className="flex items-center gap-3 mb-6">
+              <div
+                className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0"
+                style={{ background: 'rgba(212,175,55,0.18)', border: '1px solid rgba(212,175,55,0.35)' }}
+              >
+                <Shield size={20} style={{ color: '#D4AF37' }} />
               </div>
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:rotate-12 duration-300 ${iconBg} ${iconColor}`}>
-                {icon}
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-[0.25em] mb-0.5" style={{ color: 'rgba(212,175,55,0.75)' }}>
+                  Adviser Overview
+                </p>
+                <p className="text-[15px] font-black text-white tracking-tight">Assigned Student Groups</p>
               </div>
             </div>
-          </Card>
-        ))}
-      </div>
 
-      {/* Filters */}
-      <div className="flex items-center gap-3 mb-5">
-        <div className="relative flex-1 max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search groups…"
-            className="w-full pl-9 pr-3.5 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/60 bg-white shadow-sm placeholder:text-gray-400 transition-colors"
-          />
+            <div className="grid grid-cols-4 gap-3">
+              {[
+                { label: 'Total Groups',   value: totalGroups,   icon: <Users size={18} />,        color: 'rgba(148,163,184,0.9)', bg: 'rgba(148,163,184,0.1)',  border: 'rgba(148,163,184,0.2)' },
+                { label: 'Ready',          value: readyCount,    icon: <CheckCircle2 size={18} />,  color: '#34d399',               bg: 'rgba(52,211,153,0.1)',    border: 'rgba(52,211,153,0.2)'  },
+                { label: 'Needs Revision', value: revisionCount, icon: <TrendingUp size={18} />,    color: '#D4AF37',               bg: 'rgba(212,175,55,0.1)',    border: 'rgba(212,175,55,0.2)'  },
+                { label: 'Critical Gaps',  value: criticalCount, icon: <AlertCircle size={18} />,   color: '#f87171',               bg: 'rgba(248,113,113,0.1)',   border: 'rgba(248,113,113,0.2)' },
+              ].map((tile) => (
+                <div
+                  key={tile.label}
+                  className="rounded-2xl px-5 py-4 border"
+                  style={{ background: tile.bg, borderColor: tile.border }}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <span style={{ color: tile.color }}>{tile.icon}</span>
+                    <p className="text-[9px] font-black uppercase tracking-[0.18em]" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                      {tile.label}
+                    </p>
+                  </div>
+                  <p className="text-4xl font-black tracking-tight" style={{ color: tile.color }}>
+                    {tile.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          {(['ALL', 'READY', 'NEEDS_REVISION', 'CRITICAL_GAPS'] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={`px-3.5 py-1.5 rounded-xl text-[12px] font-semibold transition-all duration-150 ${
-                statusFilter === s
-                  ? 'bg-primary text-white shadow-sm'
-                  : 'bg-white border border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700'
-              }`}
-            >
-              {s === 'ALL' && 'All Groups'}
-              {s === 'NEEDS_REVISION' && 'Needs Revision'}
-              {s === 'CRITICAL_GAPS' && 'Critical'}
-              {s === 'READY' && 'Ready'}
-            </button>
-          ))}
-        </div>
-        <p className="ml-auto text-xs text-gray-400 font-medium">
-          {filtered.length} group{filtered.length === 1 ? '' : 's'}
-        </p>
-      </div>
 
-      {/* Groups table */}
-      <Card padding="none">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-100">
-              <th className="text-left px-6 py-3.5 text-[11px] font-semibold text-gray-400 uppercase tracking-[0.07em]">Group</th>
-              <th className="text-left px-4 py-3.5 text-[11px] font-semibold text-gray-400 uppercase tracking-[0.07em]">Members</th>
-              <th className="text-right px-4 py-3.5 text-[11px] font-semibold text-gray-400 uppercase tracking-[0.07em]">Health Score</th>
-              <th className="text-center px-4 py-3.5 text-[11px] font-semibold text-gray-400 uppercase tracking-[0.07em]">Issues</th>
-              <th className="text-left px-4 py-3.5 text-[11px] font-semibold text-gray-400 uppercase tracking-[0.07em]">Readiness</th>
-              <th className="text-left px-4 py-3.5 text-[11px] font-semibold text-gray-400 uppercase tracking-[0.07em]">Last Audit</th>
-              <th className="px-4 py-3.5" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {loading ? (
-              <tr><td colSpan={7} className="px-6 py-12 text-center text-sm text-gray-400">Loading groups…</td></tr>
-            ) : filtered.map((group: ApiGroup) => {
-              const latestAudit = group.auditResults[0];
-              const readinessStatus: ReadinessStatus = latestAudit?.readinessStatus ?? 'NEEDS_REVISION';
-              const healthScore = latestAudit?.overallScore ?? 0;
-              const unresolvedIssues = (latestAudit?.gaps ?? []).filter((g) => g.severity === 'CRITICAL' || g.severity === 'HIGH').length;
+        {/* ── SEARCH + FILTER ────────────────────────────────────────────── */}
+        <div className="flex flex-col md:flex-row md:items-center gap-3">
+          <div className="relative flex-1 max-w-md">
+            <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search by project title or team code…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-2xl text-[13px] font-medium focus:outline-none focus:ring-2 focus:ring-brand-navy/10 focus:border-brand-navy/30 transition-all"
+            />
+          </div>
+
+          <div className="flex items-center gap-1 p-1.5 bg-white border border-gray-200 rounded-2xl shrink-0">
+            {filterLabels.map(({ value, label }) => {
+              const activeClass = statusFilter === value
+                ? 'bg-brand-navy text-white shadow-sm'
+                : 'text-gray-400 hover:text-brand-navy';
               return (
-              <tr
-                key={group.id}
-                onClick={() => navigate(`/faculty/group/${group.id}`)}
-                className="hover:bg-slate-50/70 cursor-pointer transition-colors group"
-              >
-                <td className="px-6 py-4">
-                  <p className="text-[13.5px] font-semibold text-gray-900">{group.name}</p>
-                  {group.projectTitle && (
-                    <p className="text-[12px] text-gray-500 mt-0.5 truncate max-w-[220px]">{group.projectTitle}</p>
-                  )}
-                  <p className="text-[11px] text-gray-400 font-mono mt-0.5">{group.teamCode}</p>
-                </td>
-                <td className="px-4 py-4">
-                  <div className="flex -space-x-1.5">
-                    {group.members.slice(0, 3).map((m) => (
-                      <div
-                        key={m.id}
-                        title={m.name}
-                        className="w-7 h-7 rounded-full bg-gradient-primary flex items-center justify-center text-white text-[11px] font-bold border-2 border-white shadow-sm"
-                      >
-                        {m.name.charAt(0)}
-                      </div>
-                    ))}
-                    {group.members.length > 3 && (
-                      <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-[11px] font-bold border-2 border-white">
-                        +{group.members.length - 3}
-                      </div>
-                    )}
-                  </div>
-                </td>
-                <td className="px-4 py-4">
-                  <div className="flex justify-end">
-                    <HealthBar score={healthScore} />
-                  </div>
-                </td>
-                <td className="px-4 py-4 text-center">
-                  {unresolvedIssues > 0 ? (
-                    <span
-                      className={`inline-flex items-center justify-center w-6 h-6 rounded-lg text-[11px] font-bold ${
-                        unresolvedIssues >= 5
-                          ? 'bg-red-50 text-critical ring-1 ring-red-200'
-                          : 'bg-amber-50 text-warning ring-1 ring-amber-200'
-                      }`}
-                    >
-                      {unresolvedIssues}
-                    </span>
-                  ) : (
-                    <CheckCircle2 size={15} className="text-success mx-auto" />
-                  )}
-                </td>
-                <td className="px-4 py-4">
-                  <Badge variant={readinessToBadge(readinessStatus)} dot>
-                    {readinessLabel(readinessStatus)}
-                  </Badge>
-                </td>
-                <td className="px-4 py-4">
-                  <span className="text-[12px] text-gray-400 font-medium">
-                    {latestAudit ? formatDate(latestAudit.auditedAt) : '—'}
-                  </span>
-                </td>
-                <td className="px-4 py-4">
-                  <ChevronRight size={15} className="text-gray-200 group-hover:text-primary transition-colors" />
-                </td>
-              </tr>
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setStatusFilter(value)}
+                  className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${activeClass}`}
+                >
+                  {label}
+                </button>
               );
             })}
-          </tbody>
-        </table>
-        {filtered.length === 0 && !loading && (
-          <div className="text-center py-16 text-gray-400">
-            <Search size={28} className="mx-auto mb-3 opacity-30" />
-            <p className="text-sm font-medium">No groups match your search</p>
-            <p className="text-xs mt-1 opacity-70">Try adjusting the filter or search term</p>
-          </div>
-        )}
-      </Card>
-
-      {/* Create Group Modal */}
-      {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Hash size={15} className="text-primary" />
-                </div>
-                <h2 className="text-[15px] font-bold text-gray-900">Create New Group</h2>
-              </div>
-              <button onClick={closeModal} className="text-gray-400 hover:text-gray-700 transition-colors">
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="px-6 py-5">
-              {createdCode ? (
-                /* Success state — show the code to share */
-                <div className="text-center space-y-5">
-                  <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center mx-auto">
-                    <CheckCircle2 size={28} className="text-emerald-500" />
-                  </div>
-                  <div>
-                    <p className="text-[14px] font-semibold text-gray-800 mb-1">Group Created!</p>
-                    <p className="text-[12px] text-gray-400">Share this code with your students so they can join.</p>
-                  </div>
-                  <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl">
-                    <span className="font-mono text-xl font-bold tracking-widest text-gray-900">{createdCode}</span>
-                    <button
-                      onClick={handleCopy}
-                      className="flex items-center gap-1.5 text-[12px] font-semibold text-primary hover:text-primary/80 transition-colors"
-                    >
-                      <Copy size={14} />
-                      {copied ? 'Copied!' : 'Copy'}
-                    </button>
-                  </div>
-                  <Button onClick={closeModal} className="w-full">Done</Button>
-                </div>
-              ) : (
-                /* Create form */
-                <form onSubmit={handleCreate} className="space-y-4">
-                  <div>
-                    <label htmlFor="create-section" className="block text-[11.5px] font-semibold text-gray-500 uppercase tracking-[0.06em] mb-1.5">
-                      Section Name <span className="text-critical">*</span>
-                    </label>
-                    <input
-                      id="create-section"
-                      required
-                      value={sectionName}
-                      onChange={(e) => setSectionName(e.target.value)}
-                      placeholder="e.g. G1, G2, BSCS-3A"
-                      className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-[13px] text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all bg-white"
-                    />
-                    <p className="text-[11px] text-gray-400 mt-1.5">A unique join code will be auto-generated for this section. Students will use it to join and then set their project title.</p>
-                  </div>
-
-                  {createError && (
-                    <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-100">
-                      <AlertCircle size={13} className="text-red-500 shrink-0 mt-0.5" />
-                      <p className="text-[12px] text-red-700">{createError}</p>
-                    </div>
-                  )}
-
-                  <div className="flex gap-2 pt-1">
-                    <Button type="button" variant="outline" onClick={closeModal} className="flex-1">Cancel</Button>
-                    <Button type="submit" loading={createLoading} className="flex-1">Create Group</Button>
-                  </div>
-                </form>
-              )}
-            </div>
           </div>
         </div>
-      )}
+
+        {/* ── GROUP LIST / EMPTY STATES ──────────────────────────────────── */}
+        {renderContent()}
+
+      </div>
     </Layout>
   );
 };

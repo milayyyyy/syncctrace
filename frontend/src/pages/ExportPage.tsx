@@ -118,7 +118,9 @@ export const ExportPage: React.FC = () => {
   return (
     <Layout
       title="Export Report"
-      subtitle="Generate and download your audit report"
+      subtitle="Generate and download your full audit report in PDF, JSON, or CSV"
+      badge="Report Generator"
+      heroIcon={<Download size={26} />}
     >
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-5xl items-start">
         {/* Left 2 cols for export block */}
