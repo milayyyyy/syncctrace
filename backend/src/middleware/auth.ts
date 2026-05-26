@@ -13,13 +13,18 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
   }
   const token = header.slice(7);
 
-  const { data: { user }, error } = await supabase.auth.getUser(token);
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token);
 
-  if (error || !user) {
-    res.status(401).json({ error: 'Invalid or expired token' });
-    return;
+    if (error || !user?.email) {
+      res.status(401).json({ error: 'Invalid or expired token' });
+      return;
+    }
+
+    req.user = { id: user.id, email: user.email };
+    next();
+  } catch (err) {
+    console.error('Supabase auth error:', err);
+    res.status(503).json({ error: 'Authentication service unavailable' });
   }
-
-  req.user = { id: user.id, email: user.email ?? '' };
-  next();
 }

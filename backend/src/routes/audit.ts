@@ -1,11 +1,9 @@
 import { Router, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { analyzeTraceability, type TraceabilityAnalysis, type EvidencePair } from '../services/openai';
 import mammoth from 'mammoth';
 import pdfParse from 'pdf-parse';
-
-const prisma = new PrismaClient();
+import { prisma } from '../lib/prisma';
 
 export const auditRouter = Router();
 auditRouter.use(authenticate);

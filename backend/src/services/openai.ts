@@ -1,15 +1,25 @@
 import OpenAI from 'openai';
 
-// OpenRouter is OpenAI-API compatible — just swap the base URL and key
-const openai = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: 'https://openrouter.ai/api/v1',
-  timeout: 120000, // 2 minute timeout for large documents
-  defaultHeaders: {
-    'HTTP-Referer': 'http://localhost:4000', // Optional but recommended
-    'X-Title': 'SyncTrace',
+let openai: OpenAI | null = null;
+
+function getOpenAI(): OpenAI {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error('Missing OPENROUTER_API_KEY. Configure it before running audits.');
   }
-});
+
+  openai ??= new OpenAI({
+    apiKey,
+    baseURL: 'https://openrouter.ai/api/v1',
+    timeout: 120000, // 2 minute timeout for large documents
+    defaultHeaders: {
+      'HTTP-Referer': process.env.FRONTEND_URL ?? 'http://localhost:4000',
+      'X-Title': 'SyncTrace',
+    },
+  });
+
+  return openai;
+}
 
 export interface EvidencePair {
   upstream: string;
@@ -71,7 +81,7 @@ ${upContent}
 === DOWNSTREAM DOCUMENT (${downstream.type}) ===
 ${downContent}`;
 
-  const completion = await openai.chat.completions.create({
+  const completion = await getOpenAI().chat.completions.create({
     // Using DeepSeek V4 Flash (free) which is a newer and more efficient model
     model: 'deepseek/deepseek-v4-flash:free',
     response_format: { type: 'json_object' },

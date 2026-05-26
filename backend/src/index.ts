@@ -1,8 +1,8 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import dotenv from 'dotenv';
 
 import { authRouter } from './routes/auth';
 import { projectsRouter } from './routes/projects';
@@ -10,8 +10,7 @@ import { artifactsRouter } from './routes/artifacts';
 import { auditRouter } from './routes/audit';
 import { exportRouter } from './routes/export';
 import { usersRouter } from './routes/users';
-
-dotenv.config();
+import { prisma } from './lib/prisma';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -64,6 +63,16 @@ app.use(`${API_PREFIX}/users`, usersRouter);
 // Health check
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+app.get('/health/db', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ status: 'ok', db: true });
+  } catch (err) {
+    console.error('DB health check failed:', err);
+    res.status(503).json({ status: 'error', db: false });
+  }
 });
 
 // 404 handler

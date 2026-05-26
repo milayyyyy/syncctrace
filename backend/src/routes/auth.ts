@@ -1,10 +1,9 @@
 import { Router, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { prisma } from '../lib/prisma';
 
-const prisma = new PrismaClient();
 export const authRouter = Router();
 
 // Stricter rate limit for auth mutation endpoints (sync/signup)
@@ -19,7 +18,10 @@ const authMutationLimiter = rateLimit({
 const SyncSchema = z.object({
   role: z.enum(['STUDENT', 'FACULTY']),
   name: z.string().min(1).max(100),
-  avatarUrl: z.string().url().nullable().optional(),
+  avatarUrl: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+    z.union([z.string().url(), z.null()]).optional(),
+  ),
 });
 
 // POST /api/auth/sync — verify Supabase JWT, upsert user in DB, return profile
@@ -57,7 +59,12 @@ authRouter.post('/sync', authMutationLimiter, authenticate, async (req: AuthRequ
     });
   } catch (err) {
     console.error('Auth sync error:', err);
-    res.status(500).json({ error: 'Failed to sync user' });
+    const code = (err as { code?: string })?.code;
+    const message =
+      code === 'P1001' || code === 'P1000'
+        ? 'Database unreachable. Check DATABASE_URL on Vercel (use Supabase pooler, port 6543).'
+        : 'Failed to sync user';
+    res.status(500).json({ error: message, code });
   }
 });
 
@@ -70,7 +77,15 @@ authRouter.get('/me', authenticate, async (req: AuthRequest, res: Response): Pro
       return;
     }
     res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } });
-  } catch {
-    res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    console.error('Auth me error:', err);
+    const code = (err as { code?: string })?.code;
+    const message =
+      code === 'P1001' || code === 'P1000'
+        ? 'Database unreachable. Check DATABASE_URL on Vercel.'
+        : code === 'P2021'
+          ? 'Database schema is not migrated. Run Prisma migrations for this database.'
+          : 'Internal server error';
+    res.status(500).json({ error: message, code });
   }
 });

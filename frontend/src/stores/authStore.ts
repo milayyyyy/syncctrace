@@ -25,6 +25,11 @@ interface AuthState {
 }
 
 type StoreSetter = (s: Partial<AuthState>) => void;
+type ApiError = { response?: { status?: number; data?: { error?: string; role?: Role } } };
+
+function asApiError(err: unknown): ApiError {
+  return typeof err === 'object' && err !== null ? err as ApiError : {};
+}
 
 /** OAuth return URL — always use the site the user is on (never a build-time localhost URL). */
 function oauthRedirectUrl(): string {
@@ -56,14 +61,15 @@ async function fetchUserProfile(session: Session, pendingRole: Role | null) {
   });
 }
 
-function isMissingUserError(err: { response?: { status?: number; data?: { error?: string } } }): boolean {
+function isMissingUserError(err: ApiError): boolean {
   return err?.response?.status === 404 && err?.response?.data?.error === 'User not found';
 }
 
 /** Handle known auth errors from initFromSession; returns true if handled. */
-async function handleInitError(err: any, pendingRole: Role | null, setState: StoreSetter): Promise<boolean> {
-  const status = err?.response?.status;
-  if (status === 404 && !isMissingUserError(err)) {
+async function handleInitError(err: unknown, pendingRole: Role | null, setState: StoreSetter): Promise<boolean> {
+  const apiErr = asApiError(err);
+  const status = apiErr.response?.status;
+  if (status === 404 && !isMissingUserError(apiErr)) {
     setState({
       isLoading: false,
       authError: 'Could not reach the server. Try again in a moment.',
@@ -71,13 +77,13 @@ async function handleInitError(err: any, pendingRole: Role | null, setState: Sto
     });
     return true;
   }
-  if (isMissingUserError(err)) {
+  if (isMissingUserError(apiErr)) {
     await supabase.auth.signOut();
     setState({ isLoading: false, authError: 'No account found. Please sign up first.', authRedirectTo: '/signup' });
     return true;
   }
-  if (status === 403 && err?.response?.data?.error === 'ROLE_MISMATCH') {
-    const actualRole: Role = err.response.data.role as Role;
+  if (status === 403 && apiErr.response?.data?.error === 'ROLE_MISMATCH') {
+    const actualRole: Role = apiErr.response.data.role ?? 'STUDENT';
     const label = actualRole === 'STUDENT' ? 'Student' : 'Adviser';
     await supabase.auth.signOut();
     setState({ isLoading: false, authError: `Account already registered as ${label}. Please sign in instead.`, authRedirectTo: '/login' });
@@ -111,8 +117,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const user: User = res.data.user;
         set({ user, isAuthenticated: true, isLoading: false, authError: null, authRedirectTo: '/login' });
         await loadUserGroup(set);
-      } catch (err: any) {
-        if (isMissingUserError(err)) {
+      } catch (err: unknown) {
+        if (isMissingUserError(asApiError(err))) {
           set({ authRedirectTo: '/signup' });
         } else {
           set({ authError: 'Sign-in failed. Please try again.' });
@@ -143,8 +149,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           const label = existingUser.role === 'STUDENT' ? 'Student' : 'Adviser';
           set({ authError: `Account already registered as ${label}. Please sign in instead.` });
         }
-      } catch (err: any) {
-        if (!isMissingUserError(err)) {
+      } catch (err: unknown) {
+        if (!isMissingUserError(asApiError(err))) {
           set({ authError: 'Sign-up failed. Please try again.' });
           return;
         }
@@ -193,7 +199,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const user: User = res.data.user;
       set({ user, isAuthenticated: true, isLoading: false, authError: null, authRedirectTo: '/login' });
       await loadUserGroup(set);
-    } catch (err: any) {
+    } catch (err: unknown) {
       await handleInitError(err, pendingRole, set);
     } finally {
       if (get().isLoading) set({ isLoading: false });
@@ -208,4 +214,3 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ user: null, isAuthenticated: false, selectedRole: 'STUDENT', isLoading: false, groupId: null, authRedirectTo: '/login' });
   },
 }));
-

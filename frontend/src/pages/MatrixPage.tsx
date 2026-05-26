@@ -598,7 +598,7 @@ export const MatrixPage: React.FC = () => {
   const [showExport, setShowExport] = useState(false);
   const navigate = useNavigate();
 
-  interface WorkspaceOption { id: string; name: string; projectTitle: string; }
+  interface WorkspaceOption { id: string; name: string; projectTitle: string; auditResults?: unknown[]; }
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
 
@@ -609,12 +609,11 @@ export const MatrixPage: React.FC = () => {
         const groups: WorkspaceOption[] = res.data.groups ?? [];
         setWorkspaces(groups);
         // Pick the first group that has audit results, otherwise fall back to first group
-        const withAudit = groups.find((g: any) => g.auditResults?.length > 0);
+        const withAudit = groups.find((g) => (g.auditResults?.length ?? 0) > 0);
         const best = withAudit ?? groups[0];
         if (best) setSelectedGroupId(best.id);
       })
       .catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   interface RawLink {
@@ -622,6 +621,7 @@ export const MatrixPage: React.FC = () => {
     upstream: { type: string };
     downstream: { type: string };
     alignmentScore: number;
+    coverageScore?: number;
     status: 'PASS' | 'WARN' | 'FAIL';
     evidencePairs: Array<{ upstream: string; downstream: string; similarity: number }>;
   }
@@ -674,7 +674,7 @@ export const MatrixPage: React.FC = () => {
       upstreamType: link.upstream.type,
       downstreamType: link.downstream.type,
       alignmentScore: link.alignmentScore,
-      coverage: (link as any).coverageScore ?? link.alignmentScore,
+      coverage: link.coverageScore ?? link.alignmentScore,
       criticalGaps,
       warnings,
       status: link.status,

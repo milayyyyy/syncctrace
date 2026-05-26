@@ -729,7 +729,7 @@ export const GroupDetailPage: React.FC = () => {
                                 </div>
                                 <div className="space-y-4">
                                     <h4 className="text-[22px] font-black text-white leading-tight tracking-tight drop-shadow-md">
-                                        {gapTypeLabel[Object.keys(gapTypeLabel)[Math.floor(Math.random() * 5)]] || 'AI Issue Analysis'}
+                                        {gapTypeLabel[selectedGap.affectedArtifacts?.[0] as keyof typeof gapTypeLabel] || 'AI Issue Analysis'}
                                     </h4>
                                     <div className="h-1.5 w-16 bg-brand-gold rounded-full shadow-[0_0_15px_rgba(212,175,55,0.6)]" />
                                     <p className="text-[15.5px] font-bold text-white leading-relaxed italic pr-6 drop-shadow-sm">
@@ -856,4 +856,3 @@ export const GroupDetailPage: React.FC = () => {
     </Layout>
   );
 };
-

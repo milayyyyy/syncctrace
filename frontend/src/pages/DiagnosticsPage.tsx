@@ -209,7 +209,7 @@ export const DiagnosticsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('ALL');
 
-  interface WorkspaceOption { id: string; name: string; projectTitle: string; }
+  interface WorkspaceOption { id: string; name: string; projectTitle: string; auditResults?: unknown[]; }
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
 
@@ -220,12 +220,11 @@ export const DiagnosticsPage: React.FC = () => {
         const groups: WorkspaceOption[] = res.data.groups ?? [];
         setWorkspaces(groups);
         // Pick the first group that has audit results, otherwise fall back to first group
-        const withAudit = groups.find((g: any) => g.auditResults?.length > 0);
+        const withAudit = groups.find((g) => (g.auditResults?.length ?? 0) > 0);
         const best = withAudit ?? groups[0];
         if (best) setSelectedGroupId(best.id);
       })
       .catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchGaps = useCallback(async () => {

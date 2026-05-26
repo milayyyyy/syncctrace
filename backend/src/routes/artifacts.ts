@@ -1,9 +1,8 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
-import { PrismaClient, type ArtifactType } from '@prisma/client';
+import { type ArtifactType } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth';
-
-const prisma = new PrismaClient();
+import { prisma } from '../lib/prisma';
 
 export const artifactsRouter = Router();
 artifactsRouter.use(authenticate);

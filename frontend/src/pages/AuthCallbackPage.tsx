@@ -23,7 +23,7 @@ export const AuthCallbackPage: React.FC = () => {
         navigate(state.authRedirectTo || '/login', { replace: true });
       }
     });
-  }, []);
+  }, [initFromSession, navigate]);
 
   return (
     <div className="h-screen flex items-center justify-center bg-[#0a0f1e]">
