@@ -436,10 +436,12 @@ export const ArtifactsPage: React.FC = () => {
       await api.post(`/api/audit/${selectedGroupId}`);
     } catch (err: unknown) {
       clearInterval(stepInterval);
-      const axiosErr = err as { response?: { data?: { error?: string; details?: string } } };
+      const axiosErr = err as { response?: { status?: number; data?: { error?: string; details?: string } } };
       const msg = axiosErr.response?.data?.error || 'Analysis failed.';
       const sub = axiosErr.response?.data?.details;
-      setSaveError(msg + (sub ? `: ${sub}` : ''));
+      const status = axiosErr.response?.status;
+      const prefix = status ? `HTTP ${status}: ` : '';
+      setSaveError(prefix + msg + (sub ? ` ${sub}` : ''));
       setRunning(false);
       setPipelineStep(-1);
       return;

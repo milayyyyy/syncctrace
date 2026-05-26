@@ -21,6 +21,14 @@ function auditErrorResponse(err: unknown): { status: number; error: string; deta
   const providerStatus = (err as { status?: number })?.status;
   const message = err instanceof Error ? err.message : String(err);
 
+  if (/OPENROUTER_API_KEY/i.test(message)) {
+    return {
+      status: 500,
+      error: 'AI provider is not configured.',
+      details: message,
+    };
+  }
+
   if (providerStatus === 401 || /401|user not found|unauthorized/i.test(message)) {
     return {
       status: 502,
@@ -29,11 +37,27 @@ function auditErrorResponse(err: unknown): { status: number; error: string; deta
     };
   }
 
-  if (/OPENROUTER_API_KEY/i.test(message)) {
+  if (providerStatus === 402 || /402|credit|payment|quota/i.test(message)) {
     return {
-      status: 500,
-      error: 'AI provider is not configured.',
-      details: message,
+      status: 502,
+      error: 'AI provider quota or credits issue.',
+      details: 'Check your OpenRouter account credits and model access.',
+    };
+  }
+
+  if (providerStatus === 429 || /429|rate limit/i.test(message)) {
+    return {
+      status: 502,
+      error: 'AI provider rate limit reached.',
+      details: 'Wait a minute and try again, or use an OpenRouter key with higher limits.',
+    };
+  }
+
+  if (providerStatus && providerStatus >= 500) {
+    return {
+      status: 502,
+      error: 'AI provider is temporarily unavailable.',
+      details: 'OpenRouter or the selected model returned a server error. Try again shortly.',
     };
   }
 
