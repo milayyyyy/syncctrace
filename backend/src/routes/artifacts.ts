@@ -40,6 +40,10 @@ artifactsRouter.post('/', async (req: AuthRequest, res: Response): Promise<void>
       ),
     );
 
+    console.log(
+      `[ARTIFACTS] Saved ${upserted.length} artifacts for group ${groupId}: ${upserted.map((a) => `${a.type}:${a.id}`).join(', ')}`,
+    );
+
     res.status(201).json({ message: 'Artifacts saved', artifacts: upserted });
   } catch (err) {
     console.error('Artifact save error:', err);

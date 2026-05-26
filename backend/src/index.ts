@@ -71,8 +71,23 @@ app.get('/health', (_req, res) => {
 
 app.get('/health/db', async (_req, res) => {
   try {
-    await prisma.$queryRaw`SELECT 1`;
-    res.json({ status: 'ok', db: true });
+    const [databaseInfo] = await prisma.$queryRaw<Array<{ database: string; schema: string }>>`
+      SELECT current_database() AS database, current_schema() AS schema
+    `;
+    const [users, groups, artifacts, auditResults, traceLinks] = await Promise.all([
+      prisma.user.count(),
+      prisma.facultyGroup.count(),
+      prisma.artifact.count(),
+      prisma.auditResult.count(),
+      prisma.traceabilityLink.count(),
+    ]);
+    res.json({
+      status: 'ok',
+      db: true,
+      database: databaseInfo?.database,
+      schema: databaseInfo?.schema,
+      counts: { users, groups, artifacts, auditResults, traceLinks },
+    });
   } catch (err) {
     console.error('DB health check failed:', err);
     res.status(503).json({ status: 'error', db: false });

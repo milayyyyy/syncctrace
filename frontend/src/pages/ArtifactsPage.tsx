@@ -395,7 +395,7 @@ export const ArtifactsPage: React.FC = () => {
   };
 
   const waitForCompletedAudit = async (gid: string, startedAt: number): Promise<boolean> => {
-    for (let attempt = 0; attempt < 8; attempt++) {
+    for (let attempt = 0; attempt < 60; attempt++) {
       try {
         const res = await api.get(`/api/audit/${gid}/latest`, { timeout: 15000 });
         const audit = res.data.auditResult as { auditedAt?: string } | null;
@@ -406,7 +406,7 @@ export const ArtifactsPage: React.FC = () => {
       } catch {
         // The audit may still be finishing; retry briefly before surfacing an error.
       }
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 5000));
     }
     return false;
   };
@@ -454,8 +454,26 @@ export const ArtifactsPage: React.FC = () => {
     try {
       await api.post(`/api/audit/${selectedGroupId}`, undefined, { timeout: 180000 });
     } catch (err: unknown) {
-      clearInterval(stepInterval);
       const axiosErr = err as { code?: string; message?: string; response?: { status?: number; data?: { error?: string; details?: string } } };
+      const hasBackendResponse = Boolean(axiosErr.response);
+      if (!hasBackendResponse || axiosErr.code === 'ECONNABORTED') {
+        const completedLater = await waitForCompletedAudit(selectedGroupId, auditStartedAt);
+        clearInterval(stepInterval);
+        if (completedLater) {
+          setPipelineStep(PIPELINE_STEPS.length);
+          await new Promise((r) => setTimeout(r, 400));
+          setRunning(false);
+          setGroupId(selectedGroupId);
+          navigate('/matrix');
+          return;
+        }
+        setSaveError('Analysis is still processing on the server. Open the Audit page in a moment to view the result.');
+        setRunning(false);
+        setPipelineStep(-1);
+        return;
+      }
+
+      clearInterval(stepInterval);
       const completedAnyway = await waitForCompletedAudit(selectedGroupId, auditStartedAt);
       if (completedAnyway) {
         setPipelineStep(PIPELINE_STEPS.length);
@@ -463,12 +481,6 @@ export const ArtifactsPage: React.FC = () => {
         setRunning(false);
         setGroupId(selectedGroupId);
         navigate('/matrix');
-        return;
-      }
-      if (axiosErr.code === 'ECONNABORTED') {
-        setSaveError('Analysis is taking longer than expected. Check the Audit page in a moment; the server may still finish the report.');
-        setRunning(false);
-        setPipelineStep(-1);
         return;
       }
       const msg = axiosErr.response?.data?.error || 'Analysis failed.';
