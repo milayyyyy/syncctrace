@@ -17,6 +17,33 @@ const TRACE_PAIRS: [string, string][] = [
   ['SDD', 'SOURCE_CODE'],
 ];
 
+function auditErrorResponse(err: unknown): { status: number; error: string; details: string } {
+  const providerStatus = (err as { status?: number })?.status;
+  const message = err instanceof Error ? err.message : String(err);
+
+  if (providerStatus === 401 || /401|user not found|unauthorized/i.test(message)) {
+    return {
+      status: 502,
+      error: 'AI provider authentication failed.',
+      details: 'Check OPENROUTER_API_KEY in Vercel and make sure the key belongs to an active OpenRouter account.',
+    };
+  }
+
+  if (/OPENROUTER_API_KEY/i.test(message)) {
+    return {
+      status: 500,
+      error: 'AI provider is not configured.',
+      details: message,
+    };
+  }
+
+  return {
+    status: 500,
+    error: 'Audit failed.',
+    details: message,
+  };
+}
+
 /** Extract plain text from a PDF buffer using pdf-parse. */
 async function extractPdfText(buffer: Buffer): Promise<string | null> {
   try {
@@ -389,8 +416,8 @@ auditRouter.post('/:groupId', async (req: AuthRequest, res: Response): Promise<v
     res.status(201).json({ auditResult });
   } catch (err) {
     console.error('Audit error:', err);
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: 'Audit failed.', details: message });
+    const response = auditErrorResponse(err);
+    res.status(response.status).json({ error: response.error, details: response.details });
   }
 });
 

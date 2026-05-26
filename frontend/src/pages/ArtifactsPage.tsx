@@ -200,6 +200,83 @@ function ArtifactCard({ field, val, error, running, onChange, onClear }: Readonl
   );
 }
 
+function RunningAnalysisPanel({ pipelineStep }: Readonly<{ pipelineStep: number }>) {
+  return (
+    <div
+      style={{
+        minHeight: 'calc(100dvh - 260px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        position: 'relative',
+        overflow: 'hidden',
+        borderRadius: '20px',
+        backgroundColor: '#0B1521',
+        padding: '48px 20px',
+      }}
+    >
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.04,
+        backgroundImage: 'linear-gradient(rgba(212,175,55,0.8) 1px,transparent 1px),linear-gradient(90deg,rgba(212,175,55,0.8) 1px,transparent 1px)',
+        backgroundSize: '40px 40px',
+      }} />
+
+      <div style={{ maxWidth: '520px', width: '100%', textAlign: 'center', position: 'relative', zIndex: 1 }}>
+        <div style={{
+          width: '80px', height: '80px', borderRadius: '24px',
+          background: 'linear-gradient(135deg,#D4AF37,#c9a227)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          margin: '0 auto 28px',
+          boxShadow: '0 0 40px rgba(212,175,55,0.4)',
+        }}>
+          <Loader2 size={36} color="#0B1521" style={{ animation: 'spin 1s linear infinite' }} />
+        </div>
+
+        <h2 style={{ fontSize: '28px', fontWeight: 900, color: '#ffffff', margin: '0 0 8px', letterSpacing: '-0.03em' }}>
+          Running Analysis
+        </h2>
+        <p style={{ fontSize: '13px', color: '#D4AF37', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 36px' }}>
+          Step {Math.min(pipelineStep + 1, PIPELINE_STEPS.length)} of {PIPELINE_STEPS.length}
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', textAlign: 'left' }}>
+          {PIPELINE_STEPS.map((step, i) => {
+            const isCurrent = i === pipelineStep;
+            const isDone = i < pipelineStep;
+
+            return (
+              <div key={step} style={{
+                display: 'flex', alignItems: 'center', gap: '14px',
+                padding: '14px 18px', borderRadius: '14px',
+                backgroundColor: stepBg(isCurrent, isDone),
+                border: `1px solid ${stepBorder(isCurrent, isDone)}`,
+                opacity: isDone || isCurrent ? 1 : 0.35,
+                transition: 'all 0.4s',
+              }}>
+                <div style={{
+                  width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: stepIconBg(isCurrent, isDone),
+                  fontSize: '12px', fontWeight: 800,
+                  color: isDone || isCurrent ? '#ffffff' : '#64748b',
+                }}>
+                  {isDone ? <CheckCircle2 size={18} /> : <span>0{i + 1}</span>}
+                </div>
+                <div>
+                  <p style={{ fontSize: '13px', fontWeight: 700, margin: 0, color: stepTextColor(isCurrent, isDone) }}>{step}</p>
+                  {isCurrent && (
+                    <p style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', margin: '3px 0 0', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Processing...</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function collectUrlErrors(urls: Record<ArtifactType, string>): Partial<Record<ArtifactType, string>> {
   const errors: Partial<Record<ArtifactType, string>> = {};
   for (const field of ARTIFACT_FIELDS) {
@@ -431,6 +508,19 @@ export const ArtifactsPage: React.FC = () => {
   const canRunAudit = filledCount >= 2 && !hasUrlErrors;
   const auditDisabled = running || !canRunAudit;
   const saveDisabled = !anyFilled || saving || running;
+
+  if (running) {
+    return (
+      <Layout
+        title="Running Analysis"
+        subtitle="Processing your artifacts for AI traceability review"
+        badge="AI Protocol"
+        heroIcon={<Loader2 size={26} className="animate-spin" />}
+      >
+        <RunningAnalysisPanel pipelineStep={pipelineStep} />
+      </Layout>
+    );
+  }
 
   return (
     <Layout
