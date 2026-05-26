@@ -394,6 +394,23 @@ export const ArtifactsPage: React.FC = () => {
     }
   };
 
+  const waitForCompletedAudit = async (gid: string, startedAt: number): Promise<boolean> => {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try {
+        const res = await api.get(`/api/audit/${gid}/latest`, { timeout: 15000 });
+        const audit = res.data.auditResult as { auditedAt?: string } | null;
+        const auditedAt = audit?.auditedAt ? new Date(audit.auditedAt).getTime() : 0;
+        if (audit && (!auditedAt || auditedAt >= startedAt - 5000)) {
+          return true;
+        }
+      } catch {
+        // The audit may still be finishing; retry briefly before surfacing an error.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+    return false;
+  };
+
   const handleRunTraceability = async () => {
     if (!selectedGroupId) {
       setSaveError('No workspace selected. Please select a workspace above.');
@@ -409,9 +426,11 @@ export const ArtifactsPage: React.FC = () => {
     }
 
     setRunning(true);
+    const auditStartedAt = Date.now();
     setPipelineStep(0); // Step 0: Saving
     setSaveError(null);
     setSaveSuccess(false);
+    setGroupId(selectedGroupId);
 
     // Save artifacts
     await deleteRemovedTypes(selectedGroupId);
@@ -437,6 +456,15 @@ export const ArtifactsPage: React.FC = () => {
     } catch (err: unknown) {
       clearInterval(stepInterval);
       const axiosErr = err as { code?: string; message?: string; response?: { status?: number; data?: { error?: string; details?: string } } };
+      const completedAnyway = await waitForCompletedAudit(selectedGroupId, auditStartedAt);
+      if (completedAnyway) {
+        setPipelineStep(PIPELINE_STEPS.length);
+        await new Promise((r) => setTimeout(r, 400));
+        setRunning(false);
+        setGroupId(selectedGroupId);
+        navigate('/matrix');
+        return;
+      }
       if (axiosErr.code === 'ECONNABORTED') {
         setSaveError('Analysis is taking longer than expected. Check the Audit page in a moment; the server may still finish the report.');
         setRunning(false);

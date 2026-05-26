@@ -435,8 +435,24 @@ auditRouter.post('/:groupId', async (req: AuthRequest, res: Response): Promise<v
           });
         }
       }
-      return audit;
+      return tx.auditResult.findUnique({
+        where: { id: audit.id },
+        include: {
+          traceLinks: {
+            include: { upstream: true, downstream: true },
+          },
+          gaps: true,
+        },
+      });
     });
+
+    if (!auditResult) {
+      throw new Error('Audit result was created but could not be reloaded.');
+    }
+
+    console.log(
+      `[AUDIT] Created auditResult ${auditResult.id} for group ${groupId} with ${auditResult.traceLinks.length} trace links and ${auditResult.gaps.length} gaps`,
+    );
 
     res.status(201).json({ auditResult });
   } catch (err) {
