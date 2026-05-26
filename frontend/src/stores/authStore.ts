@@ -26,6 +26,11 @@ interface AuthState {
 
 type StoreSetter = (s: Partial<AuthState>) => void;
 
+/** OAuth return URL — always use the site the user is on (never a build-time localhost URL). */
+function oauthRedirectUrl(): string {
+  return `${globalThis.location.origin}/login`;
+}
+
 /** In-flight guard: prevents concurrent duplicate initFromSession calls (e.g. React StrictMode). */
 let initInFlight: Promise<void> | null = null;
 
@@ -108,7 +113,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     localStorage.removeItem('pending_role');
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${location.origin}/auth/callback` },
+      options: { redirectTo: oauthRedirectUrl() },
     });
   },
 
@@ -136,7 +141,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         localStorage.setItem('pending_role', selectedRole);
         await supabase.auth.signInWithOAuth({
           provider: 'google',
-          options: { redirectTo: `${location.origin}/auth/callback` },
+          options: { redirectTo: oauthRedirectUrl() },
         });
       }
       return;
@@ -145,15 +150,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     localStorage.setItem('pending_role', selectedRole);
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${location.origin}/auth/callback` },
+      options: { redirectTo: oauthRedirectUrl() },
     });
   },
 
   initFromSession: async () => {
     // Deduplicate concurrent calls (React StrictMode fires effects twice in dev)
     if (initInFlight) return initInFlight;
-    // Skip if already authenticated and not in initial loading state
-    if (get().isAuthenticated) return;
+    if (get().isAuthenticated) {
+      set({ isLoading: false });
+      return;
+    }
 
     let resolve!: () => void;
     initInFlight = new Promise<void>((r) => { resolve = r; });
@@ -177,6 +184,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await loadUserGroup(set);
     } catch (err: any) {
       await handleInitError(err, pendingRole, set);
+    } finally {
+      if (get().isLoading) set({ isLoading: false });
     }
     initInFlight = null;
     resolve();

@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, type ArtifactType } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth';
 
 const prisma = new PrismaClient();
@@ -83,7 +83,7 @@ artifactsRouter.delete('/:groupId/:type', async (req: AuthRequest, res: Response
     return;
   }
   try {
-    await prisma.artifact.deleteMany({ where: { groupId, type } });
+    await prisma.artifact.deleteMany({ where: { groupId, type: type as ArtifactType } });
     res.json({ message: 'Artifact removed.' });
   } catch (err) {
     console.error('Artifact delete error:', err);

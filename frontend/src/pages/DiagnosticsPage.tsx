@@ -26,14 +26,6 @@ const severityIcon: Record<Severity, React.ReactNode> = {
   LOW: <CheckCircle2 size={15} className="text-blue-500" />,
 };
 
-const gapTypeLabel: Record<string, string> = {
-  MISSING_LINK: 'Missing Link',
-  INCONSISTENCY: 'Inconsistency',
-  IMPLEMENTATION_GAP: 'Implementation Gap',
-  TERMINOLOGY_DRIFT: 'Terminology Drift',
-  DOWNSTREAM_OMISSION: 'Downstream Omission',
-};
-
 const severityBorderColor: Record<Severity, string> = {
   CRITICAL: '#EF4444',
   HIGH: '#F97316',
@@ -281,7 +273,9 @@ export const DiagnosticsPage: React.FC = () => {
           padding: '10px 40px 10px 16px',
           cursor: 'pointer',
           outline: 'none',
-          minWidth: '200px',
+          minWidth: '0',
+          width: '100%',
+          maxWidth: '280px',
         }}
       >
         {workspaces.map((ws) => (
@@ -303,7 +297,7 @@ export const DiagnosticsPage: React.FC = () => {
       headerAction={workspaceSelector}
     >
       {/* Summary stat cards */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
         {([
           { key: 'CRITICAL' as Severity, label: 'Critical', count: counts.CRITICAL, icon: <AlertCircle size={16} />, accent: '#EF4444' },
           { key: 'HIGH' as Severity, label: 'High', count: counts.HIGH, icon: <AlertTriangle size={16} />, accent: '#F97316' },
@@ -336,9 +330,9 @@ export const DiagnosticsPage: React.FC = () => {
         })}
       </div>
 
-      <div className="grid grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 lg:gap-6">
         {/* Gap list panel */}
-        <div className="col-span-2 rounded-3xl overflow-hidden ring-1 ring-brand-navy/8 shadow-lg flex flex-col">
+        <div className="lg:col-span-2 rounded-3xl overflow-hidden ring-1 ring-brand-navy/8 shadow-lg flex flex-col">
           {/* Dark header */}
           <div
             className="px-5 py-4 shrink-0"
@@ -391,7 +385,7 @@ export const DiagnosticsPage: React.FC = () => {
           </div>
 
           {/* Scrollable list */}
-          <div className="bg-slate-50/60 flex-1 p-3 space-y-2 overflow-y-auto" style={{ maxHeight: '520px' }}>
+          <div className="bg-slate-50/60 flex-1 p-3 space-y-2 overflow-y-auto max-h-[min(520px,60vh)] lg:max-h-[520px]">
             {(() => {
               if (loading) return (
                 <div className="flex flex-col items-center py-12 gap-3">
@@ -429,12 +423,12 @@ export const DiagnosticsPage: React.FC = () => {
         </div>
 
         {/* Diagnostic panel */}
-        <div className="col-span-3">
+        <div className="lg:col-span-3 min-h-[280px] lg:min-h-[420px]">
           {selected ? (
             <DiagnosticPanel gap={selected} />
           ) : (
             <div
-              className="rounded-3xl overflow-hidden ring-1 ring-brand-navy/8 shadow-lg h-full min-h-[420px] flex flex-col items-center justify-center gap-4"
+              className="rounded-3xl overflow-hidden ring-1 ring-brand-navy/8 shadow-lg h-full min-h-[280px] lg:min-h-[420px] flex flex-col items-center justify-center gap-4"
               style={{ background: 'linear-gradient(135deg, #0B1521 0%, #162D4A 60%, #1E3A5F 100%)' }}
             >
               <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(212,175,55,0.12)', border: '1px solid rgba(212,175,55,0.25)' }}>

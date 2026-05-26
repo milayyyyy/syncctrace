@@ -290,7 +290,7 @@ export const FacultyDashboardPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {[
                 { label: 'Total Groups',   value: totalGroups,   icon: <Users size={18} />,        color: 'rgba(148,163,184,0.9)', bg: 'rgba(148,163,184,0.1)',  border: 'rgba(148,163,184,0.2)' },
                 { label: 'Ready',          value: readyCount,    icon: <CheckCircle2 size={18} />,  color: '#34d399',               bg: 'rgba(52,211,153,0.1)',    border: 'rgba(52,211,153,0.2)'  },
@@ -330,7 +330,7 @@ export const FacultyDashboardPage: React.FC = () => {
             />
           </div>
 
-          <div className="flex items-center gap-1 p-1.5 bg-white border border-gray-200 rounded-2xl shrink-0">
+          <div className="flex flex-wrap items-center gap-1 p-1.5 bg-white border border-gray-200 rounded-2xl w-full md:w-auto overflow-x-auto">
             {filterLabels.map(({ value, label }) => {
               const activeClass = statusFilter === value
                 ? 'bg-brand-navy text-white shadow-sm'

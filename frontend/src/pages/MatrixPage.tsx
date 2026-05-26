@@ -51,8 +51,6 @@ function AlignmentGauge({ score }: GaugeProps) {
   );
 }
 
-interface SimilarityBarProps { readonly score: number; }
-
 function getSimTextColor(pct: number): string {
   if (pct >= 70) return 'text-brand-emerald';
   if (pct >= 40) return 'text-brand-gold';
@@ -432,19 +430,6 @@ function ExportModal({ onClose, auditData, projectTitle }: ExportModalProps) {
   );
 }
 
-function SimilarityBar({ score }: SimilarityBarProps) {
-  const pct = Math.round(score * 100);
-  const color = getSimilarityColor(pct);
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-xs font-mono text-gray-500 w-8 text-right">{pct}%</span>
-    </div>
-  );
-}
-
 interface EvidenceModalProps { readonly row: MatrixRow; readonly onClose: () => void; }
 
 function EvidenceModal({ row, onClose }: EvidenceModalProps) {
@@ -523,7 +508,7 @@ function EvidenceModal({ row, onClose }: EvidenceModalProps) {
             </div>
           </div>
           {/* Stat tiles */}
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
             {[
               { label: 'Alignment', value: formatScore(row.alignmentScore), color: getAlignTextClass(row.alignmentScore) },
               { label: 'Coverage', value: formatScore(row.coverage), color: 'text-white' },
@@ -575,7 +560,7 @@ function EvidenceModal({ row, onClose }: EvidenceModalProps) {
                   </div>
                 </div>
                 {/* Section columns */}
-                <div className="grid grid-cols-2 divide-x divide-gray-100">
+                <div className="grid grid-cols-1 sm:grid-cols-2 sm:divide-x divide-y sm:divide-y-0 divide-gray-100">
                   <div className="p-5">
                     <p className="text-[9px] font-black uppercase tracking-[0.2em] text-blue-500/80 mb-2.5 flex items-center gap-1.5">
                       <span className="w-4 h-4 rounded-md bg-blue-500/10 inline-flex items-center justify-center text-blue-600 text-[9px] font-black">↑</span>
@@ -607,12 +592,6 @@ function EvidenceModal({ row, onClose }: EvidenceModalProps) {
     </div>
   );
 }
-
-const statusIcon = {
-  PASS: <CheckCircle2 size={14} className="text-success" />,
-  WARN: <AlertTriangle size={14} className="text-warning" />,
-  FAIL: <AlertCircle size={14} className="text-critical" />,
-};
 
 export const MatrixPage: React.FC = () => {
   const [selectedRow, setSelectedRow] = useState<MatrixRow | null>(null);
@@ -733,7 +712,9 @@ export const MatrixPage: React.FC = () => {
           padding: '10px 40px 10px 16px',
           cursor: 'pointer',
           outline: 'none',
-          minWidth: '200px',
+          minWidth: '0',
+          width: '100%',
+          maxWidth: '280px',
         }}
       >
         {workspaces.map((ws) => (
@@ -826,7 +807,7 @@ export const MatrixPage: React.FC = () => {
     readinessIconColorDark = 'text-red-400';
   }
   const readinessIconDark = React.cloneElement(
-    readinessIcon as React.ReactElement,
+    readinessIcon as React.ReactElement<{ size?: number; className?: string }>,
     { size: 22, className: readinessIconColorDark },
   );
 
@@ -841,10 +822,10 @@ export const MatrixPage: React.FC = () => {
       <div className="space-y-5">
         {/* ── SUMMARY HERO PANEL ── */}
         <div className="rounded-3xl overflow-hidden shadow-2xl shadow-brand-navy/15" style={{ background: 'linear-gradient(135deg, #0B1521 0%, #162D4A 60%, #1E3A5F 100%)' }}>
-          <div className="p-7">
-            <div className="flex items-stretch gap-6">
+          <div className="p-4 sm:p-6 lg:p-7">
+            <div className="flex flex-col xl:flex-row items-stretch gap-4 sm:gap-6">
               {/* Gauge pod */}
-              <div className="flex flex-col items-center justify-center bg-white rounded-2xl shadow-xl px-8 py-6 min-w-[190px] shrink-0">
+              <div className="flex flex-col items-center justify-center bg-white rounded-2xl shadow-xl px-6 py-5 sm:px-8 sm:py-6 w-full xl:w-auto xl:min-w-[190px] shrink-0">
                 <AlignmentGauge score={overallScore} />
                 <div className="mt-3 text-center border-t border-gray-100 pt-3 w-full">
                   <p className="text-[9px] font-black uppercase tracking-[0.2em] text-brand-navy/30">Health Tier</p>
@@ -854,7 +835,7 @@ export const MatrixPage: React.FC = () => {
               {/* Right column */}
               <div className="flex-1 flex flex-col gap-4">
                 {/* Stat tiles */}
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
                   {statCards.map((s) => (
                     <div key={s.label} className="relative rounded-2xl bg-white/[0.04] border border-white/[0.07] p-5 overflow-hidden flex flex-col">
                       <div className={`absolute -top-4 -right-4 w-16 h-16 rounded-full ${s.bg} opacity-40 pointer-events-none`} />
@@ -867,35 +848,39 @@ export const MatrixPage: React.FC = () => {
                   ))}
                 </div>
                 {/* Readiness strip */}
-                <div className={`rounded-2xl flex items-center gap-5 px-6 py-4 ${readinessBgDark}`}>
-                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${readinessIconBgDark}`}>
-                    {readinessIconDark}
+                <div className={`rounded-2xl flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 sm:gap-4 px-4 py-4 sm:px-6 ${readinessBgDark}`}>
+                  <div className="flex items-center gap-4 min-w-0 flex-1">
+                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${readinessIconBgDark}`}>
+                      {readinessIconDark}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm sm:text-[15px] font-black text-white tracking-tight">{readinessText}</p>
+                      <p className="text-[11px] sm:text-[12px] text-white/40 font-medium mt-0.5 line-clamp-2 sm:truncate">{criticalIssueText}</p>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-[15px] font-black text-white tracking-tight">{readinessText}</p>
-                    <p className="text-[12px] text-white/40 font-medium mt-0.5 truncate">{criticalIssueText}</p>
-                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2 sm:ml-auto w-full sm:w-auto">
                   <button
                     type="button"
                     onClick={() => navigate('/diagnostics')}
-                    className="ml-auto shrink-0 text-[12px] font-black text-white/60 hover:text-brand-gold border border-white/10 hover:border-brand-gold/40 rounded-xl px-4 py-2.5 transition-all duration-200 whitespace-nowrap"
+                    className="flex-1 sm:flex-none text-center text-[11px] sm:text-[12px] font-black text-white/60 hover:text-brand-gold border border-white/10 hover:border-brand-gold/40 rounded-xl px-3 py-2.5 sm:px-4 transition-all duration-200"
                   >
                     View Gap Analysis →
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowExport(true)}
-                    className="shrink-0 flex items-center gap-1.5 text-[12px] font-black text-white/60 hover:text-brand-gold border border-white/10 hover:border-brand-gold/40 rounded-xl px-4 py-2.5 transition-all duration-200 whitespace-nowrap"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-[11px] sm:text-[12px] font-black text-white/60 hover:text-brand-gold border border-white/10 hover:border-brand-gold/40 rounded-xl px-3 py-2.5 sm:px-4 transition-all duration-200"
                   >
                     <Download size={13} />
                     Export Report
                   </button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
           {/* Threshold legend strip */}
-          <div className="border-t border-white/[0.05] bg-white/[0.02] px-7 py-4 flex items-center gap-10">
+          <div className="border-t border-white/[0.05] bg-white/[0.02] px-4 sm:px-7 py-3 sm:py-4 flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center gap-3 sm:gap-6 lg:gap-10">
             <p className="text-[9px] font-black text-white/20 uppercase tracking-[0.25em] whitespace-nowrap shrink-0">
               Thresholds
             </p>
@@ -916,7 +901,7 @@ export const MatrixPage: React.FC = () => {
 
         {/* ── MATRIX TABLE ── */}
         <Card padding="none" className="bg-white overflow-hidden">
-          <div className="px-8 py-5 border-b border-gray-100/80 flex items-center justify-between">
+          <div className="px-4 sm:px-8 py-4 sm:py-5 border-b border-gray-100/80 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
             <div>
               <h3 className="text-[17px] font-black text-brand-navy tracking-tight">Traceability Matrix</h3>
               <p className="text-[12px] text-brand-slate/60 font-semibold mt-0.5">Cross-reference analysis between adjacent engineering phases</p>

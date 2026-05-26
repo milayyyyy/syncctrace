@@ -9,6 +9,8 @@ jspm_packages/
 .env.test.local
 .env.production.local
 *.env
+vercel.env
+.env.vercel
 
 # Build outputs
 dist/
@@ -49,3 +51,5 @@ logs/
 
 # Frontend specific
 .tsupgrader/
+
+.vercel

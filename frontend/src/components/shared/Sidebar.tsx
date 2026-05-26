@@ -10,6 +10,7 @@ import {
   Settings,
   LogOut,
   FolderOpen,
+  X,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 
@@ -17,107 +18,96 @@ const STUDENT_SECTIONS = [
   {
     label: 'WORKSPACE',
     items: [
-      { to: '/dashboard',   icon: <LayoutGrid  size={18} strokeWidth={2.5} />, label: 'Dashboard'  },
-      { to: '/setup',       icon: <FolderOpen  size={18} strokeWidth={2.5} />, label: 'Workspaces' },
-      { to: '/artifacts',   icon: <FileText    size={18} strokeWidth={2.5} />, label: 'Artifacts'  },
-    ]
+      { to: '/dashboard', icon: <LayoutGrid size={18} strokeWidth={2.5} />, label: 'Dashboard' },
+      { to: '/setup', icon: <FolderOpen size={18} strokeWidth={2.5} />, label: 'Workspaces' },
+      { to: '/artifacts', icon: <FileText size={18} strokeWidth={2.5} />, label: 'Artifacts' },
+    ],
   },
   {
     label: 'AI PROTOCOL',
     items: [
-      { to: '/matrix',      icon: <ShieldCheck size={18} strokeWidth={2.5} />, label: 'Audit' },
-      { to: '/diagnostics', icon: <Search      size={18} strokeWidth={2.5} />, label: 'Gap Analysis' },
-    ]
+      { to: '/matrix', icon: <ShieldCheck size={18} strokeWidth={2.5} />, label: 'Audit' },
+      { to: '/diagnostics', icon: <Search size={18} strokeWidth={2.5} />, label: 'Gap Analysis' },
+    ],
   },
 ];
 
 const FACULTY_SECTIONS = [
   {
     label: 'MANAGEMENT',
-    items: [
-      { to: '/faculty', icon: <Users    size={18} strokeWidth={2.5} />, label: 'My Groups' },
-    ]
+    items: [{ to: '/faculty', icon: <Users size={18} strokeWidth={2.5} />, label: 'My Groups' }],
   },
 ];
 
-export const Sidebar: React.FC = () => {
+interface SidebarProps {
+  mobileOpen: boolean;
+  onClose: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onClose }) => {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const sections = user?.role === 'FACULTY' ? FACULTY_SECTIONS : STUDENT_SECTIONS;
 
   const handleLogout = () => {
     logout();
+    onClose();
     navigate('/login');
   };
 
+  const handleNav = () => onClose();
+
   return (
     <aside
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        width: '256px',
-        height: '100vh',
-        position: 'sticky',
-        top: 0,
-        overflow: 'hidden',
-        flexShrink: 0,
-        backgroundColor: '#0B1521',
-        boxShadow: '10px 0 50px rgba(0, 0, 0, 0.3)',
-        borderRight: '1px solid rgba(255, 255, 255, 0.06)',
-      }}
+      className={`
+        fixed lg:sticky inset-y-0 left-0 z-50
+        flex flex-col w-[min(280px,85vw)] sm:w-64 h-screen h-dvh
+        bg-[#0B1521] border-r border-white/[0.06]
+        shadow-[10px_0_50px_rgba(0,0,0,0.3)]
+        transition-transform duration-300 ease-out
+        ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+      `}
     >
-      {/* Logo */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '32px 24px 28px' }}>
-        <div
-          style={{
-            width: '48px',
-            height: '48px',
-            borderRadius: '14px',
-            backgroundColor: '#D4AF37',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-            boxShadow: '0 4px 20px rgba(212, 175, 55, 0.45)',
-          }}
+      <div className="flex items-center justify-between gap-3 px-5 pt-6 pb-4 lg:px-6 lg:pt-8 lg:pb-6">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-11 h-11 sm:w-12 sm:h-12 shrink-0 rounded-xl sm:rounded-[14px] bg-[#D4AF37] flex items-center justify-center shadow-[0_4px_20px_rgba(212,175,55,0.45)]">
+            <Activity size={20} color="#0B1521" strokeWidth={3} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm sm:text-[15px] font-black text-white leading-tight m-0 truncate">SyncTrace</p>
+            <p className="text-[8px] font-bold text-[rgba(212,175,55,0.5)] tracking-[0.2em] uppercase mt-0.5 truncate">
+              {user?.role === 'FACULTY' ? 'Faculty Portal' : 'Student Portal'}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="lg:hidden flex items-center justify-center w-9 h-9 rounded-lg text-white/70 hover:bg-white/10"
+          aria-label="Close menu"
         >
-          <Activity size={22} color="#0B1521" strokeWidth={3} />
-        </div>
-        <div>
-          <p style={{ fontSize: '15px', fontWeight: 900, color: '#ffffff', lineHeight: 1.2, letterSpacing: '0.02em', margin: 0 }}>SyncTrace</p>
-          <p style={{ fontSize: '8px', fontWeight: 700, color: 'rgba(212,175,55,0.5)', letterSpacing: '0.2em', textTransform: 'uppercase', margin: '3px 0 0' }}>
-            {user?.role === 'FACULTY' ? 'Faculty Portal' : 'Student Portal'}
-          </p>
-        </div>
+          <X size={20} />
+        </button>
       </div>
 
-      {/* Navigation */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
+      <div className="flex-1 overflow-y-auto px-3 pb-4 flex flex-col gap-6 lg:px-3">
         {sections.map((section) => (
           <div key={section.label}>
-            <p style={{
-              fontSize: '9px',
-              fontWeight: 900,
-              color: 'rgba(255,255,255,0.25)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.25em',
-              padding: '0 16px',
-              marginBottom: '8px',
-            }}>
+            <p className="text-[9px] font-black text-white/25 uppercase tracking-[0.25em] px-3 mb-2">
               {section.label}
             </p>
-            <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <nav className="flex flex-col gap-0.5">
               {section.items.map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}
                   end
-                  className={({ isActive }) => isActive ? '__nav-active' : '__nav-idle'}
+                  onClick={handleNav}
                   style={({ isActive }) => ({
                     display: 'flex',
                     alignItems: 'center',
                     gap: '14px',
-                    padding: '11px 18px',
+                    padding: '11px 16px',
                     borderRadius: '14px',
                     fontSize: '13px',
                     fontWeight: 800,
@@ -128,7 +118,7 @@ export const Sidebar: React.FC = () => {
                     boxShadow: isActive ? '0 4px 16px rgba(212,175,55,0.35)' : 'none',
                   })}
                 >
-                  <span style={{ display: 'flex', flexShrink: 0 }}>{item.icon}</span>
+                  <span className="flex shrink-0">{item.icon}</span>
                   <span>{item.label}</span>
                 </NavLink>
               ))}
@@ -136,36 +126,11 @@ export const Sidebar: React.FC = () => {
           </div>
         ))}
 
-        {/* Account */}
         <div>
-          <p style={{
-            fontSize: '9px',
-            fontWeight: 900,
-            color: 'rgba(255,255,255,0.25)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.25em',
-            padding: '0 16px',
-            marginBottom: '8px',
-          }}>
-            ACCOUNT
-          </p>
-          <button style={{
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '14px',
-            padding: '11px 18px',
-            borderRadius: '14px',
-            fontSize: '13px',
-            fontWeight: 800,
-            color: 'rgba(255,255,255,0.55)',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-          }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = '#fff'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.55)'; }}
+          <p className="text-[9px] font-black text-white/25 uppercase tracking-[0.25em] px-3 mb-2">ACCOUNT</p>
+          <button
+            type="button"
+            className="w-full flex items-center gap-3.5 px-4 py-2.5 rounded-[14px] text-[13px] font-extrabold text-white/55 bg-transparent border-0 cursor-pointer hover:bg-white/[0.04] hover:text-white transition-colors"
           >
             <Settings size={18} strokeWidth={2.5} />
             <span>Settings</span>
@@ -173,34 +138,15 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
 
-      {/* Bottom: Logout + Tour */}
-      <div style={{ padding: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', backgroundColor: 'rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div className="p-3 border-t border-white/[0.06] bg-black/25">
         <button
+          type="button"
           onClick={handleLogout}
-          style={{
-            width: '100%',
-            height: '46px',
-            backgroundColor: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '14px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '10px',
-            fontSize: '11px',
-            fontWeight: 900,
-            color: 'rgba(255,255,255,0.8)',
-            letterSpacing: '0.12em',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)'; }}
+          className="w-full h-11 flex items-center justify-center gap-2.5 rounded-[14px] text-[11px] font-black text-white/80 tracking-[0.12em] bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] transition-colors cursor-pointer"
         >
           <LogOut size={15} color="#D4AF37" />
           LOGOUT
         </button>
-
       </div>
     </aside>
   );

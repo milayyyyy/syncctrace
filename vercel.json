@@ -10,8 +10,9 @@
     "backend": {
       "root": "backend",
       "routePrefix": "/api",
-      "buildCommand": "npm run build",
-      "entrypoint": "dist/index.js"
+      "framework": "express",
+      "buildCommand": "npm run prisma:generate && npm run build",
+      "entrypoint": "src/index.ts"
     }
   }
 }

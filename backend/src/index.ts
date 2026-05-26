@@ -18,12 +18,15 @@ const PORT = process.env.PORT || 4000;
 
 // Security middleware
 app.use(helmet());
+const corsOrigins = [
+  process.env.FRONTEND_URL,
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'https://synctrace.vercel.app',
+].filter((o): o is string => Boolean(o));
+
 app.use(cors({
-  origin: [
-    process.env.FRONTEND_URL || 'http://localhost:5173',
-    'http://localhost:5173',
-    'http://localhost:5174',
-  ],
+  origin: corsOrigins,
   credentials: true,
 }));
 // General rate limit — generous for a SPA that makes multiple calls per page

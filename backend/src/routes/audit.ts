@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth';
-import { analyzeTraceability } from '../services/openai';
+import { analyzeTraceability, type TraceabilityAnalysis, type EvidencePair } from '../services/openai';
 import mammoth from 'mammoth';
 import pdfParse from 'pdf-parse';
 
@@ -228,12 +228,7 @@ auditRouter.post('/:groupId', async (req: AuthRequest, res: Response): Promise<v
     interface AnalysisWork {
       up: (typeof artifacts)[0];
       down: (typeof artifacts)[0];
-      reusedData?: {
-        alignmentScore: number;
-        status: any;
-        evidencePairs: any;
-        gaps: any[];
-      };
+      reusedData?: TraceabilityAnalysis;
     }
     const plan: AnalysisWork[] = [];
 
@@ -269,15 +264,16 @@ auditRouter.post('/:groupId', async (req: AuthRequest, res: Response): Promise<v
           up, down,
           reusedData: {
             alignmentScore: latestLink.alignmentScore,
-            status: latestLink.status,
-            evidencePairs: latestLink.evidencePairs,
+            status: latestLink.status as 'PASS' | 'WARN' | 'FAIL',
+            evidencePairs: (latestLink.evidencePairs as unknown as EvidencePair[]) ?? [],
             gaps: relevantGaps.map(g => ({
               description: g.description,
               severity: g.severity,
               rootCause: g.rootCause,
               recommendation: g.recommendation,
               aiConfidence: g.aiConfidence
-            }))
+            })),
+            summary: `Reused traceability analysis for ${up.type} → ${down.type}.`,
           }
         });
       } else {

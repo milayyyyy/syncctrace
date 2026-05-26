@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useAuthStore } from './stores/authStore';
 import { LoginPage } from './pages/LoginPage';
@@ -17,8 +17,20 @@ interface ProtectedRouteProps {
   readonly requiredRole?: 'STUDENT' | 'FACULTY';
 }
 
+function BootSpinner() {
+  return (
+    <div className="min-h-screen min-h-dvh flex items-center justify-center bg-[#0a0f1e]">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-8 h-8 border-2 border-white/20 border-t-[#F59E0B] rounded-full animate-spin" />
+        <p className="text-white/40 text-sm">Loading…</p>
+      </div>
+    </div>
+  );
+}
+
 function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated, user, isLoading } = useAuthStore();
+  if (isLoading) return <BootSpinner />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (requiredRole && user?.role !== requiredRole) {
     return <Navigate to={user?.role === 'FACULTY' ? '/faculty' : '/setup'} replace />;
@@ -41,64 +53,74 @@ function studentRedirect(groupId: string | null) {
   return groupId ? '/dashboard' : '/setup';
 }
 
-function App() {
-  const { isAuthenticated, isLoading, user, groupId, initFromSession } = useAuthStore();
+function isOAuthReturnPath(pathname: string, hash: string): boolean {
+  return (
+    (pathname === '/login' || pathname === '/signup' || pathname.startsWith('/auth/callback'))
+    && (hash.includes('access_token') || hash.includes('error'))
+  );
+}
 
-  // Restore session on app load — skip on the OAuth callback route
-  // (AuthCallbackPage owns initFromSession during that flow)
+function AppRoutes() {
+  const { isAuthenticated, isLoading, user, groupId, initFromSession } = useAuthStore();
+  const location = useLocation();
+
   useEffect(() => {
-    if (!globalThis.location.pathname.startsWith('/auth/callback')) {
+    const skipInit =
+      location.pathname.startsWith('/auth/callback')
+      || isOAuthReturnPath(location.pathname, location.hash);
+    if (!skipInit) {
       initFromSession();
     }
-  }, []);
+  }, [location.pathname, location.hash, initFromSession]);
 
-  // Show a full-screen spinner while resolving the session.
-  // This prevents the login page from flashing for users with an existing session.
-  if (isLoading && !globalThis.location.pathname.startsWith('/auth/callback')) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-[#0a0f1e]">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-2 border-white/20 border-t-[#F59E0B] rounded-full animate-spin" />
-          <p className="text-white/40 text-sm">Loading…</p>
-        </div>
-      </div>
-    );
+  const oauthReturn = isOAuthReturnPath(location.pathname, location.hash);
+  const isPublicRoute = ['/login', '/signup'].includes(location.pathname);
+  const showBootSpinner =
+    isLoading
+    && !oauthReturn
+    && !location.pathname.startsWith('/auth/callback')
+    && isPublicRoute;
+
+  if (showBootSpinner) {
+    return <BootSpinner />;
   }
 
   return (
+    <Routes>
+      <Route
+        path="/login"
+        element={isAuthenticated
+          ? <Navigate to={user?.role === 'FACULTY' ? '/faculty' : studentRedirect(groupId)} replace />
+          : <LoginPage />}
+      />
+
+      <Route
+        path="/signup"
+        element={isAuthenticated
+          ? <Navigate to={user?.role === 'FACULTY' ? '/faculty' : studentRedirect(groupId)} replace />
+          : <SignUpPage />}
+      />
+
+      <Route path="/auth/callback" element={<AuthCallbackPage />} />
+
+      <Route path="/dashboard" element={<ProtectedRoute requiredRole="STUDENT"><DashboardPage /></ProtectedRoute>} />
+      <Route path="/setup" element={<ProtectedRoute requiredRole="STUDENT"><SetupPage /></ProtectedRoute>} />
+      <Route path="/artifacts" element={<ProtectedRoute requiredRole="STUDENT"><ArtifactsPage /></ProtectedRoute>} />
+      <Route path="/matrix" element={<ProtectedRoute requiredRole="STUDENT"><MatrixPage /></ProtectedRoute>} />
+      <Route path="/diagnostics" element={<ProtectedRoute requiredRole="STUDENT"><DiagnosticsPage /></ProtectedRoute>} />
+
+      <Route path="/faculty" element={<ProtectedRoute requiredRole="FACULTY"><FacultyDashboardPage /></ProtectedRoute>} />
+      <Route path="/faculty/group/:id" element={<ProtectedRoute requiredRole="FACULTY"><GroupDetailPage /></ProtectedRoute>} />
+
+      <Route path="*" element={<DefaultRedirect />} />
+    </Routes>
+  );
+}
+
+function App() {
+  return (
     <BrowserRouter>
-      <Routes>
-        <Route
-          path="/login"
-          element={isAuthenticated
-            ? <Navigate to={user?.role === 'FACULTY' ? '/faculty' : studentRedirect(groupId)} replace />
-            : <LoginPage />}
-        />
-
-        <Route
-          path="/signup"
-          element={isAuthenticated
-            ? <Navigate to={user?.role === 'FACULTY' ? '/faculty' : studentRedirect(groupId)} replace />
-            : <SignUpPage />}
-        />
-
-        {/* OAuth callback */}
-        <Route path="/auth/callback" element={<AuthCallbackPage />} />
-
-        {/* Student routes */}
-        <Route path="/dashboard" element={<ProtectedRoute requiredRole="STUDENT"><DashboardPage /></ProtectedRoute>} />
-        <Route path="/setup" element={<ProtectedRoute requiredRole="STUDENT"><SetupPage /></ProtectedRoute>} />
-        <Route path="/artifacts" element={<ProtectedRoute requiredRole="STUDENT"><ArtifactsPage /></ProtectedRoute>} />
-        <Route path="/matrix" element={<ProtectedRoute requiredRole="STUDENT"><MatrixPage /></ProtectedRoute>} />
-        <Route path="/diagnostics" element={<ProtectedRoute requiredRole="STUDENT"><DiagnosticsPage /></ProtectedRoute>} />
-
-        {/* Faculty routes */}
-        <Route path="/faculty" element={<ProtectedRoute requiredRole="FACULTY"><FacultyDashboardPage /></ProtectedRoute>} />
-        <Route path="/faculty/group/:id" element={<ProtectedRoute requiredRole="FACULTY"><GroupDetailPage /></ProtectedRoute>} />
-
-        {/* Default redirect */}
-        <Route path="*" element={<DefaultRedirect />} />
-      </Routes>
+      <AppRoutes />
     </BrowserRouter>
   );
 }

@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { Menu } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 
 interface LayoutProps {
@@ -10,107 +11,92 @@ interface LayoutProps {
   headerAction?: React.ReactNode;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, title, subtitle, badge, heroIcon, headerAction }) => (
-  <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#F1F5F9', fontFamily: 'Inter, system-ui, sans-serif' }}>
-    <Sidebar />
-    <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflowX: 'hidden' }}>
+export const Layout: React.FC<LayoutProps> = ({ children, title, subtitle, badge, heroIcon, headerAction }) => {
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-      {/* ── Hero / Page Header ──────────────────────────────── */}
-      {(title || headerAction) && (
-        <header
-          style={{
-            position: 'relative',
-            backgroundColor: '#0B1521',
-            overflow: 'hidden',
-            padding: '44px 48px 48px',
-            flexShrink: 0,
-            margin: '20px 20px 0 20px',
-            borderRadius: '20px',
-          }}
-        >
-          {/* Decorative grid */}
-          <div style={{
-            position: 'absolute', inset: 0, opacity: 0.06,
-            backgroundImage: 'linear-gradient(rgba(212,175,55,0.6) 1px, transparent 1px), linear-gradient(90deg, rgba(212,175,55,0.6) 1px, transparent 1px)',
-            backgroundSize: '40px 40px',
-            pointerEvents: 'none',
-          }} />
-          {/* Gold orb top-right */}
-          <div style={{
-            position: 'absolute', top: '-80px', right: '-80px',
-            width: '320px', height: '320px',
-            borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(212,175,55,0.18) 0%, transparent 70%)',
-            pointerEvents: 'none',
-          }} />
-          {/* Subtle orb bottom-left */}
-          <div style={{
-            position: 'absolute', bottom: '-60px', left: '30%',
-            width: '200px', height: '200px',
-            borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(30,58,95,0.6) 0%, transparent 70%)',
-            pointerEvents: 'none',
-          }} />
+  return (
+    <div className="flex min-h-screen min-h-dvh bg-slate-100 font-sans">
+      <Sidebar mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
 
-          <div style={{ position: 'relative', zIndex: 10, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '24px', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-              {/* Optional page icon */}
-              {heroIcon && (
-                <div style={{
-                  width: '56px', height: '56px', borderRadius: '16px',
-                  backgroundColor: 'rgba(212,175,55,0.15)',
-                  border: '1px solid rgba(212,175,55,0.3)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: '#D4AF37', flexShrink: 0,
-                }}>
-                  {heroIcon}
+      <div className="flex flex-1 flex-col min-w-0 w-full">
+        {/* Mobile top bar */}
+        <div className="lg:hidden sticky top-0 z-30 flex items-center justify-between gap-3 px-4 py-3 bg-[#0B1521] border-b border-white/10 shadow-md">
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+            className="flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 text-white"
+            aria-label="Open menu"
+          >
+            <Menu size={22} />
+          </button>
+          <span className="text-sm font-black text-white tracking-wide">SyncTrace</span>
+          <div className="w-10" aria-hidden="true" />
+        </div>
+
+        <main className="flex flex-1 flex-col min-w-0 overflow-x-hidden">
+          {(title || headerAction) && (
+            <header className="relative shrink-0 mx-3 mt-3 sm:mx-4 sm:mt-4 lg:mx-5 lg:mt-5 rounded-2xl lg:rounded-[20px] bg-[#0B1521] overflow-hidden">
+              <div
+                className="absolute inset-0 opacity-[0.06] pointer-events-none"
+                style={{
+                  backgroundImage:
+                    'linear-gradient(rgba(212,175,55,0.6) 1px, transparent 1px), linear-gradient(90deg, rgba(212,175,55,0.6) 1px, transparent 1px)',
+                  backgroundSize: '40px 40px',
+                }}
+              />
+              <div className="absolute -top-20 -right-20 w-48 h-48 sm:w-80 sm:h-80 rounded-full bg-[radial-gradient(circle,rgba(212,175,55,0.18)_0%,transparent_70%)] pointer-events-none" />
+              <div className="absolute -bottom-16 left-[20%] w-32 h-32 sm:w-52 sm:h-52 rounded-full bg-[radial-gradient(circle,rgba(30,58,95,0.6)_0%,transparent_70%)] pointer-events-none" />
+
+              <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10">
+                <div className="flex items-start gap-3 sm:gap-5 min-w-0">
+                  {heroIcon && (
+                    <div className="w-11 h-11 sm:w-14 sm:h-14 shrink-0 rounded-xl sm:rounded-2xl bg-[rgba(212,175,55,0.15)] border border-[rgba(212,175,55,0.3)] flex items-center justify-center text-[#D4AF37]">
+                      {heroIcon}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    {badge && (
+                      <div className="inline-flex items-center gap-1.5 bg-[rgba(212,175,55,0.12)] border border-[rgba(212,175,55,0.25)] rounded-full px-2.5 py-0.5 sm:px-3 sm:py-1 mb-2">
+                        <span className="w-1 h-1 rounded-full bg-[#D4AF37]" />
+                        <span className="text-[8px] sm:text-[9px] font-black text-[#D4AF37] tracking-[0.2em] uppercase">{badge}</span>
+                      </div>
+                    )}
+                    {title && (
+                      <h1 className="text-xl sm:text-2xl lg:text-[32px] font-black text-white tracking-tight leading-tight m-0 break-words">
+                        {title}
+                      </h1>
+                    )}
+                    {subtitle && (
+                      <p className="text-xs sm:text-[13px] text-white/65 font-semibold mt-1.5 sm:mt-2 flex items-center gap-2">
+                        <span className="w-4 sm:w-5 h-0.5 bg-[#D4AF37] rounded shrink-0" />
+                        <span className="break-words">{subtitle}</span>
+                      </p>
+                    )}
+                  </div>
                 </div>
-              )}
-              <div>
-                {badge && (
-                  <div style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '6px',
-                    backgroundColor: 'rgba(212,175,55,0.12)',
-                    border: '1px solid rgba(212,175,55,0.25)',
-                    borderRadius: '999px',
-                    padding: '3px 12px',
-                    marginBottom: '10px',
-                  }}>
-                    <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#D4AF37', display: 'block' }} />
-                    <span style={{ fontSize: '9px', fontWeight: 900, color: '#D4AF37', letterSpacing: '0.2em', textTransform: 'uppercase' }}>{badge}</span>
+                {headerAction && (
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0 w-full sm:w-auto">
+                    {headerAction}
                   </div>
                 )}
-                {title && (
-                  <h1 style={{
-                    fontSize: '32px', fontWeight: 900, color: '#ffffff',
-                    letterSpacing: '-0.02em', lineHeight: 1.1, margin: 0,
-                  }}>{title}</h1>
-                )}
-                {subtitle && (
-                  <p style={{
-                    fontSize: '13px', color: 'rgba(255,255,255,0.65)',
-                    fontWeight: 600, marginTop: '8px', letterSpacing: '0.01em',
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                  }}>
-                    <span style={{ width: '20px', height: '2px', backgroundColor: '#D4AF37', borderRadius: '2px', flexShrink: 0 }} />
-                    {subtitle}
-                  </p>
-                )}
               </div>
-            </div>
-            {headerAction && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                {headerAction}
-              </div>
-            )}
-          </div>
-        </header>
-      )}
+            </header>
+          )}
 
-      {/* ── Page Body ───────────────────────────────────────── */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '28px 40px 48px 40px' }}>
-        {children}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 sm:px-5 sm:py-6 lg:px-8 lg:py-8 pb-safe">
+            {children}
+          </div>
+        </main>
       </div>
-    </main>
-  </div>
-);
+
+      {mobileNavOpen && (
+        <button
+          type="button"
+          className="lg:hidden fixed inset-0 z-40 bg-black/50"
+          aria-label="Close menu"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
+    </div>
+  );
+};

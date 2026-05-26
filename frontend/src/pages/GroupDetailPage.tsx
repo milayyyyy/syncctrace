@@ -295,7 +295,7 @@ function ExportModal({ onClose, auditData, projectTitle }: ExportModalProps) {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <p className="text-[13px] font-bold text-gray-900">{opt.label}</p>
-                            {isSelected && <Badge variant="success" className="text-[9px] px-1.5 py-0">SELECTED</Badge>}
+                            {isSelected && <Badge variant="pass" className="text-[9px] px-1.5 py-0">SELECTED</Badge>}
                           </div>
                           <p className="text-[11px] text-gray-400 font-medium truncate">{opt.desc}</p>
                         </div>
@@ -390,18 +390,6 @@ function ExportModal({ onClose, auditData, projectTitle }: ExportModalProps) {
   );
 }
 
-function getScoreTextColor(score: number): string {
-  if (score >= 80) return '#10B981';
-  if (score >= 60) return '#D97706';
-  return '#DC2626';
-}
-
-function getAlignTextClass(score: number): string {
-  if (score >= 80) return 'text-success';
-  if (score >= 60) return 'text-warning';
-  return 'text-critical';
-}
-
 export const GroupDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -485,7 +473,7 @@ export const GroupDetailPage: React.FC = () => {
 
   return (
     <Layout
-      title={group.projectTitle || group.name}
+      title={group.projectTitle}
       subtitle={`Team ${group.teamCode} — Research Protocol Review`}
       badge="Adviser Portal"
       heroIcon={<Target size={26} />}
@@ -505,7 +493,7 @@ export const GroupDetailPage: React.FC = () => {
       }
     >
       {/* ── Dashboard Top Bar ─────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8">
         <button
           onClick={() => navigate('/faculty')}
           className="group flex items-center gap-3 text-[11px] font-black uppercase tracking-[0.2em] text-brand-navy/30 hover:text-brand-navy transition-all"
@@ -516,8 +504,8 @@ export const GroupDetailPage: React.FC = () => {
           Registry Dashboard
         </button>
 
-        <div className="flex items-center gap-12">
-          <div className="flex items-center gap-8 border-r border-brand-navy/5 pr-12">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-8 w-full sm:w-auto">
+          <div className="flex items-center justify-between sm:justify-start gap-4 sm:gap-8 sm:border-r sm:border-brand-navy/5 sm:pr-8 lg:pr-12">
             {[
               { label: 'Critical', value: criticalGaps, color: 'text-brand-coral' },
               { label: 'High', value: warnings, color: 'text-brand-gold' },
@@ -563,7 +551,8 @@ export const GroupDetailPage: React.FC = () => {
             </div>
 
             <Card padding="none" className="overflow-hidden border-none shadow-sm ring-1 ring-brand-navy/5">
-              <table className="w-full text-left">
+              <div className="overflow-x-auto">
+              <table className="w-full text-left min-w-[520px]">
                 <thead>
                   <tr className="bg-[#0B1521] text-white">
                     <th className="px-8 py-4 text-[10px] font-black uppercase tracking-[0.2em] opacity-70">Artifact Linkage</th>
@@ -623,6 +612,7 @@ export const GroupDetailPage: React.FC = () => {
                   })}
                 </tbody>
               </table>
+              </div>
             </Card>
           </section>
 
@@ -640,7 +630,7 @@ export const GroupDetailPage: React.FC = () => {
               </div>
 
               {/* Severity Filter */}
-              <div className="flex items-center gap-1.5 p-1 bg-brand-navy/5 rounded-xl shrink-0">
+              <div className="flex flex-wrap items-center gap-1.5 p-1 bg-brand-navy/5 rounded-xl w-full lg:w-auto overflow-x-auto">
                 <div className="px-2 border-r border-brand-navy/10 mr-1 hidden sm:block">
                   <Filter size={12} className="text-brand-navy/30" />
                 </div>
@@ -670,7 +660,7 @@ export const GroupDetailPage: React.FC = () => {
                   <p className="text-[12px] text-emerald-600/60 font-medium">All artifacts are perfectly aligned with the research protocol.</p>
                </div>
             ) : (
-                <div className="max-h-[580px] overflow-y-auto pr-3 custom-scrollbar">
+                <div className="max-h-[min(580px,50vh)] sm:max-h-[580px] overflow-y-auto pr-1 sm:pr-3 custom-scrollbar">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-12">
                     {gaps.map((gap) => (
                       <Card
@@ -860,7 +850,7 @@ export const GroupDetailPage: React.FC = () => {
         <ExportModal
           onClose={() => setShowExport(false)}
           auditData={exportAudit}
-          projectTitle={group.projectTitle || group.name}
+          projectTitle={group.projectTitle}
         />
       )}
     </Layout>

@@ -598,17 +598,22 @@ export const SetupPage: React.FC = () => {
   const { setGroupId } = useAuthStore();
   const [groups, setGroups]           = useState<ApiGroup[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
+  const [loadError, setLoadError]     = useState<string | null>(null);
   const [showJoin, setShowJoin]       = useState(false);
   const [showInit, setShowInit]       = useState(false);
 
   const fetchGroups = useCallback(async () => {
+    setLoadError(null);
     try {
       const res = await api.get('/api/projects');
       const fetched: ApiGroup[] = res.data.groups ?? [];
       setGroups(fetched);
       if (fetched.length > 0) setGroupId(fetched[0].id);
-    } catch { /* non-fatal */ }
-    finally { setPageLoading(false); }
+    } catch {
+      setLoadError('Could not load workspaces. Check your connection and try again.');
+    } finally {
+      setPageLoading(false);
+    }
   }, [setGroupId]);
 
   useEffect(() => { fetchGroups(); }, [fetchGroups]);
@@ -637,6 +642,18 @@ export const SetupPage: React.FC = () => {
             <div className="w-8 h-8 border-2 border-gray-200 border-t-primary rounded-full animate-spin" />
             <p className="text-sm text-gray-400">Loading workspace…</p>
           </div>
+      </Layout>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <Layout title="My Workspaces" subtitle="All your capstone projects and team groups" badge="Workspaces" heroIcon={<FolderOpen size={26} />}>
+        <Card className="text-center py-12">
+          <AlertCircle size={32} className="text-red-400 mx-auto mb-4" />
+          <p className="text-sm text-gray-600 mb-4">{loadError}</p>
+          <Button onClick={() => { setPageLoading(true); fetchGroups(); }}>Retry</Button>
+        </Card>
       </Layout>
     );
   }
@@ -687,7 +704,7 @@ export const SetupPage: React.FC = () => {
       badge="Workspaces"
       heroIcon={<FolderOpen size={26} />}
       headerAction={
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => setShowInit(true)} className="hover:scale-105 active:scale-95 transition-transform duration-150">
             <FolderOpen size={15} />
             New Workspace
@@ -700,7 +717,7 @@ export const SetupPage: React.FC = () => {
       }
     >
       <div className="space-y-6">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '16px' }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {groups.map((group) => (
             <WorkspaceCard key={group.id} group={group} />
           ))}

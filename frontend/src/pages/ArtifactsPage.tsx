@@ -59,15 +59,6 @@ const ARTIFACT_FIELDS: ArtifactField[] = [
   },
 ];
 
-const PREFILLED: Record<ArtifactType, string> = {
-  PROPOSAL: 'https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms',
-  SRS: 'https://docs.google.com/document/d/1EvSuRikGHtCQmm5PF_XHEJcjSVrj4lANlnR6J1aMi44',
-  SDD: 'https://docs.google.com/document/d/2CrVjhXpnMuE5aXQ3fmtF7KZDRLzR5e8e3Yck9M_X1Eo',
-  SPMP: 'https://docs.google.com/document/d/3DsWkYqoNvUF6bYR4gnUG8LZESMzS6f9f4Zdl0N_Y2Fp',
-  STD: 'https://docs.google.com/document/d/4EtXlZrpOwVG7cZS5hoVH9MAFTNaT7g0g5Ael1O_Z3Gq',
-  SOURCE_CODE: 'https://github.com/team-synctrace/synctrace-app',
-};
-
 // Ordered processing pipeline steps that match the use case flow
 function cardBorderColor(hasError: boolean, hasUrl: boolean): string {
   if (hasError) return '#fca5a5';
@@ -162,7 +153,7 @@ function ArtifactCard({ field, val, error, running, onChange, onClear }: Readonl
             backgroundColor: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center',
             transition: 'background-color 0.2s',
           }}>
-            {React.cloneElement(field.icon as React.ReactElement, { size: 16, color: iconColor })}
+            {React.cloneElement(field.icon as React.ReactElement<{ size?: number; color?: string }>, { size: 16, color: iconColor })}
           </div>
           {hasUrl && !hasError && (
             <span style={{ fontSize: '9px', fontWeight: 700, color: '#059669', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '6px', padding: '2px 7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Linked</span>
@@ -217,8 +208,6 @@ function collectUrlErrors(urls: Record<ArtifactType, string>): Partial<Record<Ar
   }
   return errors;
 }
-
-type Status = 'idle' | 'processing' | 'completed';
 
 interface WorkspaceOption {
   id: string;
@@ -409,7 +398,9 @@ export const ArtifactsPage: React.FC = () => {
           padding: '10px 40px 10px 16px',
           cursor: running ? 'not-allowed' : 'pointer',
           outline: 'none',
-          minWidth: '200px',
+          minWidth: '0',
+          width: '100%',
+          maxWidth: '280px',
         }}
       >
         {workspaces.map((ws) => (
@@ -452,7 +443,7 @@ export const ArtifactsPage: React.FC = () => {
       <div style={{ maxWidth: '1100px', margin: '0 auto', paddingBottom: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
         {/* Artifact cards grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px' }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-3.5">
             {ARTIFACT_FIELDS.map((field) => (
               <ArtifactCard
                 key={field.key}
@@ -502,23 +493,18 @@ export const ArtifactsPage: React.FC = () => {
             </div>
 
             {/* Actions */}
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-2.5">
               {/* Run Audit — primary CTA */}
               <button
                 type="button"
                 onClick={handleRunTraceability}
                 disabled={auditDisabled}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-[13px] font-extrabold text-white border-0 transition-all disabled:cursor-not-allowed"
                 style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                   background: auditDisabled
                     ? 'linear-gradient(135deg,#94a3b8,#cbd5e1)'
                     : 'linear-gradient(135deg,#1E3A5F,#2d5a9e)',
-                  color: '#ffffff', border: 'none', borderRadius: '12px',
-                  padding: '14px 24px', fontSize: '13px', fontWeight: 800,
-                  cursor: auditDisabled ? 'not-allowed' : 'pointer',
                   boxShadow: auditDisabled ? 'none' : '0 6px 20px rgba(30,58,95,0.3)',
-                  transition: 'background 0.2s, box-shadow 0.2s',
-                  letterSpacing: '-0.01em', whiteSpace: 'nowrap',
                 }}
               >
                 {running
@@ -532,14 +518,10 @@ export const ArtifactsPage: React.FC = () => {
                 type="button"
                 onClick={handleSave}
                 disabled={saveDisabled}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold border border-slate-200 transition-colors disabled:cursor-not-allowed"
                 style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                   backgroundColor: saveDisabled ? '#f1f5f9' : '#f8fafc',
                   color: saveDisabled ? '#94a3b8' : '#1E3A5F',
-                  border: '1px solid #e2e8f0', borderRadius: '12px',
-                  padding: '11px 20px', fontSize: '12px', fontWeight: 700,
-                  cursor: saveDisabled ? 'not-allowed' : 'pointer',
-                  transition: 'background-color 0.2s', whiteSpace: 'nowrap',
                 }}
               >
                 {saving ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={14} />}

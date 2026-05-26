@@ -68,7 +68,7 @@ export const ExportPage: React.FC = () => {
   ]);
 
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: ReturnType<typeof setInterval>;
     if (stage === 'processing') {
       setProgress(0);
       setLogIndex(0);
