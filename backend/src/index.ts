@@ -50,13 +50,16 @@ const authMutationLimiter = rateLimit({
 app.use(generalLimiter);
 app.use(express.json({ limit: '2mb' }));
 
+// Vercel backend routePrefix "/api" strips that segment before Express sees the path.
+const API_PREFIX = process.env.VERCEL ? '' : '/api';
+
 // Routes
-app.use('/api/auth', authRouter);
-app.use('/api/projects', projectsRouter);
-app.use('/api/artifacts', artifactsRouter);
-app.use('/api/audit', auditRouter);
-app.use('/api/export', exportRouter);
-app.use('/api/users', usersRouter);
+app.use(`${API_PREFIX}/auth`, authRouter);
+app.use(`${API_PREFIX}/projects`, projectsRouter);
+app.use(`${API_PREFIX}/artifacts`, artifactsRouter);
+app.use(`${API_PREFIX}/audit`, auditRouter);
+app.use(`${API_PREFIX}/export`, exportRouter);
+app.use(`${API_PREFIX}/users`, usersRouter);
 
 // Health check
 app.get('/health', (_req, res) => {

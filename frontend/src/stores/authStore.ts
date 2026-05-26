@@ -56,10 +56,22 @@ async function fetchUserProfile(session: Session, pendingRole: Role | null) {
   });
 }
 
+function isMissingUserError(err: { response?: { status?: number; data?: { error?: string } } }): boolean {
+  return err?.response?.status === 404 && err?.response?.data?.error === 'User not found';
+}
+
 /** Handle known auth errors from initFromSession; returns true if handled. */
 async function handleInitError(err: any, pendingRole: Role | null, setState: StoreSetter): Promise<boolean> {
   const status = err?.response?.status;
-  if (status === 404) {
+  if (status === 404 && !isMissingUserError(err)) {
+    setState({
+      isLoading: false,
+      authError: 'Could not reach the server. Try again in a moment.',
+      authRedirectTo: '/login',
+    });
+    return true;
+  }
+  if (isMissingUserError(err)) {
     await supabase.auth.signOut();
     setState({ isLoading: false, authError: 'No account found. Please sign up first.', authRedirectTo: '/signup' });
     return true;
@@ -100,8 +112,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ user, isAuthenticated: true, isLoading: false, authError: null, authRedirectTo: '/login' });
         await loadUserGroup(set);
       } catch (err: any) {
-        if (err?.response?.status === 404) {
-          // Supabase account exists but no app account — send to sign up
+        if (isMissingUserError(err)) {
           set({ authRedirectTo: '/signup' });
         } else {
           set({ authError: 'Sign-in failed. Please try again.' });
@@ -133,7 +144,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           set({ authError: `Account already registered as ${label}. Please sign in instead.` });
         }
       } catch (err: any) {
-        if (err?.response?.status !== 404) {
+        if (!isMissingUserError(err)) {
           set({ authError: 'Sign-up failed. Please try again.' });
           return;
         }
