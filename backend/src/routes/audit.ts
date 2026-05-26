@@ -339,9 +339,10 @@ auditRouter.post('/:groupId', async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    // Execute analysis sequentially to stay within Groq free-tier TPM (12k/min).
-    // Each call uses ~1,500 tokens; a 10-second gap keeps burst usage under the limit.
-    // On 429 rate-limit errors, wait 30 s then retry once.
+    // On 429 rate-limit errors, wait 30 seconds before each retry.
+    const MAX_AI_ATTEMPTS = 3;
+    const RATE_LIMIT_RETRY_DELAY_MS = 30_000;
+
     async function analyzeWithRetry(
       up: (typeof artifacts)[0],
       down: (typeof artifacts)[0],
@@ -362,10 +363,9 @@ auditRouter.post('/:groupId', async (req: AuthRequest, res: Response): Promise<v
         const status = (err as { status?: number }).status;
         console.error(`[AI] ERROR (${status}) for ${up.type} ➔ ${down.type}:`, err);
         
-        if (status === 429 && attempt < 3) {
-          const retryAfter = (err as any).error?.metadata?.retry_after_seconds || (30 * attempt);
-          console.log(`[AI] Rate limited (429). Waiting ${retryAfter}s before retry ${attempt + 1}/3...`);
-          await new Promise(r => setTimeout(r, (retryAfter + 5) * 1000));
+        if (status === 429 && attempt < MAX_AI_ATTEMPTS) {
+          console.log(`[AI] Rate limited (429). Waiting 30s before retry ${attempt + 1}/${MAX_AI_ATTEMPTS}...`);
+          await new Promise(r => setTimeout(r, RATE_LIMIT_RETRY_DELAY_MS));
           return await analyzeWithRetry(up, down, attempt + 1);
         }
         throw err;
