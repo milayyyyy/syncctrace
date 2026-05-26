@@ -55,6 +55,42 @@ export interface TraceabilityAnalysis {
   summary: string;
 }
 
+type RetryableAiError = Error & { status?: number };
+
+function retryableAiError(message: string): RetryableAiError {
+  const err = new Error(message) as RetryableAiError;
+  err.status = 502;
+  return err;
+}
+
+function shouldTryNextModel(err: unknown): boolean {
+  const status = (err as { status?: number })?.status;
+  return status === 429 || status === 502 || status === 503;
+}
+
+function parseAnalysis(raw: string, model: string): TraceabilityAnalysis & { coverageScore?: number } {
+  let data: Partial<TraceabilityAnalysis & { coverageScore?: number }>;
+  try {
+    data = JSON.parse(raw) as Partial<TraceabilityAnalysis & { coverageScore?: number }>;
+  } catch {
+    throw retryableAiError(`Model ${model} returned invalid JSON.`);
+  }
+
+  const alignmentScore = typeof data.alignmentScore === 'number' ? data.alignmentScore : Number(data.alignmentScore);
+  if (!Number.isFinite(alignmentScore)) {
+    throw retryableAiError(`Model ${model} returned an invalid alignment score.`);
+  }
+
+  return {
+    alignmentScore,
+    coverageScore: typeof data.coverageScore === 'number' ? data.coverageScore : alignmentScore,
+    status: data.status === 'PASS' || data.status === 'WARN' || data.status === 'FAIL' ? data.status : 'FAIL',
+    evidencePairs: Array.isArray(data.evidencePairs) ? data.evidencePairs : [],
+    gaps: Array.isArray(data.gaps) ? data.gaps : [],
+    summary: typeof data.summary === 'string' ? data.summary : 'Traceability analysis completed.',
+  };
+}
+
 const SYSTEM_PROMPT = `You are an expert software engineering reviewer. Analyze traceability between documents for capstone projects.
 Analyze whether the downstream document addresses the upstream requirements.
 
@@ -95,7 +131,6 @@ ${downContent}`;
 
   const models = openRouterModels();
   let lastError: unknown;
-  let raw = '{}';
 
   for (const model of models) {
     try {
@@ -108,19 +143,17 @@ ${downContent}`;
           { role: 'user', content: userContent },
         ],
       });
-      raw = completion.choices[0].message.content ?? '{}';
-      lastError = null;
-      break;
+      const raw = completion.choices?.[0]?.message?.content;
+      if (!raw) {
+        throw retryableAiError(`Model ${model} returned no analysis content.`);
+      }
+      return parseAnalysis(raw, model);
     } catch (err) {
       lastError = err;
-      const status = (err as { status?: number })?.status;
-      if (status !== 429 && status !== 502 && status !== 503) throw err;
+      if (!shouldTryNextModel(err)) throw err;
     }
   }
 
   if (lastError) throw lastError;
-
-  const data = JSON.parse(raw);
-  if (!data.coverageScore) data.coverageScore = data.alignmentScore;
-  return data;
+  throw new Error('No OpenRouter models are configured.');
 }
