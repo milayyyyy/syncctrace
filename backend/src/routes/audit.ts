@@ -20,6 +20,7 @@ const TRACE_PAIRS: [string, string][] = [
 function auditErrorResponse(err: unknown): { status: number; error: string; details: string } {
   const providerStatus = (err as { status?: number })?.status;
   const message = err instanceof Error ? err.message : String(err);
+  const providerRaw = (err as { error?: { metadata?: { raw?: string } } })?.error?.metadata?.raw;
 
   if (/OPENROUTER_API_KEY/i.test(message)) {
     return {
@@ -49,7 +50,7 @@ function auditErrorResponse(err: unknown): { status: number; error: string; deta
     return {
       status: 502,
       error: 'AI provider rate limit reached.',
-      details: 'Wait a minute and try again, or use an OpenRouter key with higher limits.',
+      details: providerRaw ?? 'Wait a minute and try again, or configure OPENROUTER_MODELS with another model.',
     };
   }
 
@@ -57,7 +58,7 @@ function auditErrorResponse(err: unknown): { status: number; error: string; deta
     return {
       status: 502,
       error: 'AI provider is temporarily unavailable.',
-      details: 'OpenRouter or the selected model returned a server error. Try again shortly.',
+      details: providerRaw ?? 'OpenRouter or the selected model returned a server error. Try again shortly.',
     };
   }
 

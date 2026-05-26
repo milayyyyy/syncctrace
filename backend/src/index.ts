@@ -15,6 +15,10 @@ import { prisma } from './lib/prisma';
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+// Vercel sits in front of Express and sends X-Forwarded-* headers.
+// express-rate-limit needs this to identify the real client IP correctly.
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet());
 const corsOrigins = [

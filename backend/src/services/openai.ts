@@ -2,6 +2,18 @@ import OpenAI from 'openai';
 
 let openai: OpenAI | null = null;
 
+function openRouterModels(): string[] {
+  const configured = process.env.OPENROUTER_MODELS ?? process.env.OPENROUTER_MODEL;
+  if (configured) {
+    return configured
+      .split(',')
+      .map((model) => model.trim())
+      .filter(Boolean);
+  }
+
+  return ['deepseek/deepseek-v4-flash:free'];
+}
+
 function getOpenAI(): OpenAI {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -81,18 +93,33 @@ ${upContent}
 === DOWNSTREAM DOCUMENT (${downstream.type}) ===
 ${downContent}`;
 
-  const completion = await getOpenAI().chat.completions.create({
-    // Using DeepSeek V4 Flash (free) which is a newer and more efficient model
-    model: 'deepseek/deepseek-v4-flash:free',
-    response_format: { type: 'json_object' },
-    temperature: 0.2,
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: userContent },
-    ],
-  });
+  const models = openRouterModels();
+  let lastError: unknown;
+  let raw = '{}';
 
-  const raw = completion.choices[0].message.content ?? '{}';
+  for (const model of models) {
+    try {
+      const completion = await getOpenAI().chat.completions.create({
+        model,
+        response_format: { type: 'json_object' },
+        temperature: 0.2,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: userContent },
+        ],
+      });
+      raw = completion.choices[0].message.content ?? '{}';
+      lastError = null;
+      break;
+    } catch (err) {
+      lastError = err;
+      const status = (err as { status?: number })?.status;
+      if (status !== 429 && status !== 502 && status !== 503) throw err;
+    }
+  }
+
+  if (lastError) throw lastError;
+
   const data = JSON.parse(raw);
   if (!data.coverageScore) data.coverageScore = data.alignmentScore;
   return data;
