@@ -40,13 +40,6 @@ export const SignUpPage: React.FC = () => {
 
   return (
     <AuthPageLayout>
-      <div className="mb-10">
-        <h3 className="text-lg font-bold text-gray-900 mb-3">Welcome back</h3>
-        <p className="text-sm text-gray-500 leading-relaxed">
-          Sign in with your Google account to continue your academic traceability audits.
-        </p>
-      </div>
-
       <RoleSelector selectedRole={selectedRole} onSelect={setSelectedRole} />
 
       <GoogleAuthButton
