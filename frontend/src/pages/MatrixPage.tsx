@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button';
 import { formatScore } from '../lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
+import { useAuthStore } from '../stores/authStore';
 
 const RADIUS = 54;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
@@ -597,6 +598,7 @@ export const MatrixPage: React.FC = () => {
   const [selectedRow, setSelectedRow] = useState<MatrixRow | null>(null);
   const [showExport, setShowExport] = useState(false);
   const navigate = useNavigate();
+  const { groupId } = useAuthStore();
 
   interface WorkspaceOption { id: string; name: string; projectTitle: string; auditResults?: unknown[]; }
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
@@ -609,12 +611,13 @@ export const MatrixPage: React.FC = () => {
         const groups: WorkspaceOption[] = res.data.groups ?? [];
         setWorkspaces(groups);
         // Pick the first group that has audit results, otherwise fall back to first group
+        const activeGroup = groups.find((g) => g.id === groupId);
         const withAudit = groups.find((g) => (g.auditResults?.length ?? 0) > 0);
-        const best = withAudit ?? groups[0];
+        const best = activeGroup ?? withAudit ?? groups[0];
         if (best) setSelectedGroupId(best.id);
       })
       .catch(() => {});
-  }, []);
+  }, [groupId]);
 
   interface RawLink {
     id: string;

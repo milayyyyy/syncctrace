@@ -433,10 +433,16 @@ export const ArtifactsPage: React.FC = () => {
     }, 8000); // 8s per step to better match real AI processing time
 
     try {
-      await api.post(`/api/audit/${selectedGroupId}`);
+      await api.post(`/api/audit/${selectedGroupId}`, undefined, { timeout: 180000 });
     } catch (err: unknown) {
       clearInterval(stepInterval);
-      const axiosErr = err as { response?: { status?: number; data?: { error?: string; details?: string } } };
+      const axiosErr = err as { code?: string; message?: string; response?: { status?: number; data?: { error?: string; details?: string } } };
+      if (axiosErr.code === 'ECONNABORTED') {
+        setSaveError('Analysis is taking longer than expected. Check the Audit page in a moment; the server may still finish the report.');
+        setRunning(false);
+        setPipelineStep(-1);
+        return;
+      }
       const msg = axiosErr.response?.data?.error || 'Analysis failed.';
       const sub = axiosErr.response?.data?.details;
       const status = axiosErr.response?.status;
