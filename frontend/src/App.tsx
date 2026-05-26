@@ -61,7 +61,7 @@ function isOAuthReturnPath(pathname: string, hash: string): boolean {
 }
 
 function AppRoutes() {
-  const { isAuthenticated, isLoading, user, groupId, initFromSession } = useAuthStore();
+  const { isAuthenticated, user, groupId, initFromSession } = useAuthStore();
   const location = useLocation();
 
   useEffect(() => {
@@ -72,18 +72,6 @@ function AppRoutes() {
       initFromSession();
     }
   }, [location.pathname, location.hash, initFromSession]);
-
-  const oauthReturn = isOAuthReturnPath(location.pathname, location.hash);
-  const isPublicRoute = ['/login', '/signup'].includes(location.pathname);
-  const showBootSpinner =
-    isLoading
-    && !oauthReturn
-    && !location.pathname.startsWith('/auth/callback')
-    && isPublicRoute;
-
-  if (showBootSpinner) {
-    return <BootSpinner />;
-  }
 
   return (
     <Routes>
