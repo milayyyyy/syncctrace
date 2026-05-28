@@ -126,11 +126,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       return;
     }
-    // No session — OAuth without a pending_role (login flow, existing accounts only)
-    localStorage.removeItem('pending_role');
+    // No session — OAuth for login (existing accounts only). Pass state=LOGIN.
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: oauthRedirectUrl() },
+      options: { redirectTo: oauthRedirectUrl(), queryParams: { state: 'LOGIN' } },
     });
   },
 
@@ -154,20 +153,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           set({ authError: 'Sign-up failed. Please try again.' });
           return;
         }
-        // 404 = no backend account yet — create one via OAuth
-        localStorage.setItem('pending_role', selectedRole);
+        // 404 = no backend account yet — create one via OAuth. Pass role via state.
         await supabase.auth.signInWithOAuth({
           provider: 'google',
-          options: { redirectTo: oauthRedirectUrl() },
+          options: { redirectTo: oauthRedirectUrl(), queryParams: { state: selectedRole } },
         });
       }
       return;
     }
     // No session — OAuth to register a new account
-    localStorage.setItem('pending_role', selectedRole);
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: oauthRedirectUrl() },
+      options: { redirectTo: oauthRedirectUrl(), queryParams: { state: selectedRole } },
     });
   },
 
@@ -191,8 +188,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return;
     }
 
-    const pendingRole = localStorage.getItem('pending_role') as Role | null;
-    localStorage.removeItem('pending_role');
+    // Read role from the OAuth `state` parameter stored in user metadata by Supabase
+    const { data: { session: freshSession } } = await supabase.auth.getSession();
+    const stateParam = freshSession?.user?.user_metadata?.state ?? null;
+    const pendingRole = (stateParam === 'STUDENT' || stateParam === 'FACULTY') ? stateParam as Role : null;
 
     try {
       const res = await fetchUserProfile(session, pendingRole);

@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Download, FileText, FileJson, FileSpreadsheet, CheckCircle2, RefreshCw, Clock, HardDrive, Trash2 } from 'lucide-react';
+import { Download, FileText, FileJson, FileSpreadsheet, CheckCircle2, Clock, HardDrive, Trash2 } from 'lucide-react';
 import { Layout } from '../components/shared/Layout';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Spinner } from '../components/ui/Spinner';
 import { Badge } from '../components/ui/Badge';
 import type { ExportFormat } from '../types';
+import { useAuthStore } from '../stores/authStore';
+import { ExportModal, type ExportAudit } from '../components/shared/ExportModal';
+import { api } from '../services/api';
+import { useNavigate } from 'react-router-dom';
 
 interface FormatOption {
   value: ExportFormat;
@@ -35,7 +38,6 @@ const FORMAT_OPTIONS: FormatOption[] = [
   },
 ];
 
-type ExportStage = 'idle' | 'processing' | 'done';
 
 interface HistoryItem {
   id: string;
@@ -44,72 +46,89 @@ interface HistoryItem {
   size: string;
 }
 
-const EXPORT_LOGS = [
-  'Initializing export engine & verifying authorization...',
-  'Retrieving workspace traceability definitions...',
-  'Validating proposal requirements mapping matrices...',
-  'Compiling AI code-to-specification recommendations...',
-  'Formatting vector charts & status indicators...',
-  'Polishing table structures & layout alignments...',
-  'Compressing file stream buffer to target package...',
-  'Finalizing file stream binaries... Ready!'
-];
-
 export const ExportPage: React.FC = () => {
   const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('PDF');
-  const [stage, setStage] = useState<ExportStage>('idle');
-  const [progress, setProgress] = useState(0);
-  const [logIndex, setLogIndex] = useState(0);
+  
+  const [auditResult, setAuditResult] = useState<any | null>(null);
+  const [projectTitle, setProjectTitle] = useState<string>('');
+  const [showExport, setShowExport] = useState(false);
+  const groupId = useAuthStore((s) => s.groupId);
+  const navigate = useNavigate();
   
   // Historical logs tracking user downloads
-  const [history, setHistory] = useState<HistoryItem[]>([
-    { id: '1', format: 'PDF', date: 'Just now', size: '2.4 MB' },
-    { id: '2', format: 'JSON', date: 'Yesterday at 3:12 PM', size: '382 KB' },
-  ]);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  useEffect(() => {
+    if (!groupId) return;
+    // fetch latest audit and project title
+    (async () => {
+      try {
+        const [auditRes, projRes] = await Promise.all([
+          api.get(`/api/audit/${groupId}/latest`),
+          api.get(`/api/projects/${groupId}`),
+        ]);
+        setAuditResult(auditRes.data.auditResult ?? null);
+        setProjectTitle(projRes.data.group?.projectTitle ?? 'Project');
+      } catch (err) {
+        setAuditResult(null);
+      }
+    })();
+  }, [groupId]);
+
+  const loadHistory = async () => {
+    try {
+      const res = await api.get('/api/export');
+      const jobs = res.data.jobs ?? [];
+      const mapped: HistoryItem[] = jobs.map((j: any) => ({
+        id: j.id,
+        format: j.format,
+        date: new Date(j.createdAt).toLocaleString(),
+        size: j.format,
+      }));
+      setHistory(mapped);
+    } catch (err) {
+      setHistory([]);
+    }
+  };
 
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval>;
-    if (stage === 'processing') {
-      setProgress(0);
-      setLogIndex(0);
-      
-      const intervalTime = 350; // Total duration about 2.8s
-      timer = setInterval(() => {
-        setProgress((prev) => {
-          if (prev >= 100) {
-            clearInterval(timer);
-            setStage('done');
-            return 100;
-          }
-          const nextVal = prev + 12.5;
-          setLogIndex(Math.min(Math.floor(nextVal / 12.5), EXPORT_LOGS.length - 1));
-          return nextVal;
-        });
-      }, intervalTime);
+    if (!groupId) return;
+    // load history initially and after modal closes
+    loadHistory();
+  }, [groupId]);
+
+  useEffect(() => {
+    if (!showExport) {
+      // refresh history after modal closes (new job may have been created)
+      loadHistory();
     }
-    return () => clearInterval(timer);
-  }, [stage]);
+  }, [showExport]);
 
   const handleExport = () => {
-    setStage('processing');
+    if (!auditResult) return;
+    setShowExport(true);
   };
 
-  const handleReset = () => {
-    setStage('idle');
-  };
+  
 
-  const handleDownload = () => {
-    // Append a new item dynamically to the export logs history!
-    const sizeMap = { PDF: '2.4 MB', JSON: '382 KB', CSV: '180 KB' };
-    const newItem: HistoryItem = {
-      id: Date.now().toString(),
-      format: selectedFormat,
-      date: 'Just now',
-      size: sizeMap[selectedFormat],
-    };
-    setHistory((prev) => [newItem, ...prev.filter(x => x.id !== '1' && x.id !== '2')]);
-    alert(`Downloading ${selectedFormat} report now!`);
-  };
+  const exportAudit: ExportAudit | null = auditResult
+    ? {
+        overallScore: auditResult.overallScore,
+        readinessStatus: auditResult.readinessStatus,
+        traceLinks: (auditResult.traceLinks ?? []).map((link: any) => ({
+          upstream: { type: link.upstream?.type ?? '' },
+          downstream: { type: link.downstream?.type ?? '' },
+          alignmentScore: link.alignmentScore ?? 0,
+          status: link.status ?? 'FAIL',
+        })),
+        gaps: (auditResult.gaps ?? []).map((g: any) => ({
+          severity: g.severity,
+          description: g.description,
+          rootCause: g.rootCause,
+          recommendation: g.recommendation,
+          aiConfidence: g.aiConfidence,
+        })),
+      }
+    : null;
 
   const clearHistory = () => {
     setHistory([]);
@@ -125,7 +144,6 @@ export const ExportPage: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-5xl items-start">
         {/* Left 2 cols for export block */}
         <div className="lg:col-span-2 space-y-4">
-          {stage === 'idle' && (
             <>
               {/* Format selector */}
               <Card className="hover:shadow duration-200 transition-all border border-slate-100 p-6">
@@ -195,59 +213,8 @@ export const ExportPage: React.FC = () => {
                 Generate {selectedFormat} Report
               </Button>
             </>
-          )}
 
-          {stage === 'processing' && (
-            <Card className="py-16 text-center shadow-lg border border-slate-100 p-8 space-y-4">
-              <Spinner size="lg" label="" className="mx-auto mb-2" />
-              <h3 className="text-base font-bold text-slate-800">Generating Audit Report...</h3>
-              <p className="text-xs text-gray-400 mt-2 font-medium">
-                Compiling specifications, file structures &amp; AI validations
-              </p>
-              
-              {/* Dynamic status ticker */}
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-[11px] text-primary font-bold animate-pulse">
-                <RefreshCw size={11} className="animate-spin" />
-                <span>{EXPORT_LOGS[logIndex]}</span>
-              </div>
-
-              {/* Advanced visual progress bar */}
-              <div className="mt-8 mx-auto max-w-sm">
-                <div className="flex justify-between text-[11px] text-slate-400 font-bold mb-1.5">
-                  <span>PROGRESS</span>
-                  <span>{progress}%</span>
-                </div>
-                <div className="h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200/40">
-                  <div 
-                    className="h-full bg-gradient-primary rounded-full transition-all duration-300 ease-out" 
-                    style={{ width: `${progress}%` }} 
-                  />
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {stage === 'done' && (
-            <Card className="text-center py-14 shadow-lg border border-slate-100">
-              <div className="w-16 h-16 rounded-2xl bg-emerald-50 ring-4 ring-emerald-50/50 border border-emerald-200 flex items-center justify-center mx-auto mb-5 animate-bounce">
-                <CheckCircle2 size={32} className="text-emerald-500" />
-              </div>
-              <h2 className="text-[20px] font-extrabold text-blue-900 mb-2 tracking-tight">Report Compiled!</h2>
-              <p className="text-[13px] text-slate-400 mb-6 font-medium">
-                Your authenticated <span className="font-bold text-slate-700">{selectedFormat}</span> artifact is ready for distribution.
-              </p>
-              
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 max-w-md mx-auto">
-                <Button size="lg" className="w-full text-white" onClick={handleDownload}>
-                  <Download size={16} />
-                  Download File
-                </Button>
-                <Button variant="outline" size="lg" className="w-full" onClick={handleReset}>
-                  Export Another Format
-                </Button>
-              </div>
-            </Card>
-          )}
+          {/* Processing/done states removed — replaced by real ExportModal */}
         </div>
 
         {/* Right 1 col for Export history / details context */}
@@ -278,12 +245,9 @@ export const ExportPage: React.FC = () => {
             ) : (
               <div className="space-y-2.5">
                 {history.map((item) => (
-                  <button 
-                    key={item.id} 
-                    type="button"
-                    className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:border-slate-200 hover:bg-slate-50/50 transition-all text-left font-normal"
-                    onClick={handleDownload}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleDownload(); } }}
+                  <div 
+                    key={item.id}
+                    className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-100 transition-all text-left font-normal"
                   >
                     <div className="flex items-center gap-3">
                       <div className="p-2 rounded-lg bg-slate-100/80 text-slate-500 flex items-center justify-center font-bold text-xs select-none">
@@ -299,7 +263,7 @@ export const ExportPage: React.FC = () => {
                         {item.size}
                       </span>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -319,6 +283,9 @@ export const ExportPage: React.FC = () => {
           </Card>
         </div>
       </div>
+      {showExport && exportAudit && (
+        <ExportModal onClose={() => setShowExport(false)} auditData={exportAudit} projectTitle={projectTitle} auditId={auditResult?.id} />
+      )}
     </Layout>
   );
 };
