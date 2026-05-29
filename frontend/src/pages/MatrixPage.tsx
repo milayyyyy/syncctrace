@@ -1,37 +1,61 @@
-import React, { useState, useEffect } from 'react';
-import { ChevronRight, AlertCircle, AlertTriangle, CheckCircle2, Info, ChevronDown, Layers, XCircle, X, Download } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  FileCode,
+  Filter,
+  Info,
+  Layers,
+  Search,
+  X,
+  XCircle,
+} from 'lucide-react';
 import type { MatrixRow, TraceEvidence } from '../types';
 import { Layout } from '../components/shared/Layout';
 import { ExportModal } from '../components/shared/ExportModal';
-import { Card } from '../components/ui/Card';
-import { Badge, matrixStatusToBadge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
-import { formatScore } from '../lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { useLatestAudit, useWorkspacePicker } from '../hooks/queries';
 import type { ApiAudit, ApiTraceLink } from '../types/api';
 import { toExportAudit } from '../services/export';
+import {
+  buildChainMatrixRows,
+  filterChainRows,
+  type ChainMatrixRow,
+  type DisplayStatus,
+} from '../lib/traceabilityMatrix';
 
 const RADIUS = 54;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
-interface GaugeProps { readonly score: number; }
+const STATUS_TABS: Array<{ id: 'ALL' | DisplayStatus; label: string; icon: React.ReactNode }> = [
+  { id: 'ALL', label: 'All Status', icon: null },
+  { id: 'ALIGNED', label: 'Aligned', icon: <CheckCircle2 size={13} className="text-emerald-600" /> },
+  { id: 'PARTIAL', label: 'Partial', icon: <Info size={13} className="text-blue-500" /> },
+  { id: 'MISSING', label: 'Missing', icon: <XCircle size={13} className="text-red-500" /> },
+  { id: 'WARNING', label: 'Warning', icon: <AlertTriangle size={13} className="text-amber-500" /> },
+];
 
 function getGaugeColor(score: number): string {
-  if (score >= 80) return '#059669'; // brand-emerald
-  if (score >= 60) return '#D4AF37'; // brand-gold
-  return '#B91C1C'; // status-critical
+  if (score >= 80) return '#059669';
+  if (score >= 60) return '#D4AF37';
+  return '#B91C1C';
 }
 
-function AlignmentGauge({ score }: GaugeProps) {
+function AlignmentGauge({ score }: { readonly score: number }) {
   const offset = CIRCUMFERENCE - (score / 100) * CIRCUMFERENCE;
   const color = getGaugeColor(score);
 
   return (
-    <div className="flex flex-col items-center">
-      <div className="relative w-40 h-40">
+    <div className="flex flex-col items-center shrink-0">
+      <div className="relative w-36 h-36 sm:w-40 sm:h-40">
         <svg className="w-full h-full -rotate-90" viewBox="0 0 128 128">
-          <circle cx="64" cy="64" r={RADIUS} fill="none" stroke="#E2E8F0" strokeWidth="8" />
+          <circle cx="64" cy="64" r={RADIUS} fill="none" stroke="#E2E8F0" strokeWidth="10" />
           <circle
             cx="64"
             cy="64"
@@ -42,40 +66,77 @@ function AlignmentGauge({ score }: GaugeProps) {
             strokeLinecap="round"
             strokeDasharray={CIRCUMFERENCE}
             strokeDashoffset={offset}
-            className="transition-all duration-1000 ease-out"
+            className="transition-all duration-700 ease-out"
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-4xl font-black text-brand-navy tracking-tight">{score.toFixed(1)}</span>
-          <span className="text-[12px] text-brand-slate font-bold mt-1 uppercase tracking-widest">Alignment</span>
+          <span className="text-3xl sm:text-4xl font-black text-[#1E3A5F] tracking-tight">{score.toFixed(1)}%</span>
+          <span className="text-[10px] text-slate-500 font-bold mt-0.5 uppercase tracking-[0.2em]">Alignment</span>
         </div>
+      </div>
+      <div className="mt-3 text-center">
+        <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">Health Tier</p>
+        <p className={`text-sm font-black mt-0.5 ${score >= 80 ? 'text-emerald-600' : score >= 60 ? 'text-amber-600' : 'text-red-600'}`}>
+          {score >= 80 ? 'Excellent' : score >= 60 ? 'Caution' : 'Critical'}
+        </p>
       </div>
     </div>
   );
+}
+
+function StatusBadge({ status }: { readonly status: DisplayStatus }) {
+  if (status === 'ALIGNED') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-[11px] font-bold ring-1 ring-emerald-200">
+        <CheckCircle2 size={13} /> Aligned
+      </span>
+    );
+  }
+  if (status === 'PARTIAL') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-[11px] font-bold ring-1 ring-blue-200">
+        <Info size={13} /> Partial
+      </span>
+    );
+  }
+  if (status === 'WARNING') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 text-[11px] font-bold ring-1 ring-amber-200">
+        <AlertTriangle size={13} /> Warning
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-50 text-red-700 text-[11px] font-bold ring-1 ring-red-200">
+      <XCircle size={13} /> Missing
+    </span>
+  );
+}
+
+function ImplementationCellView({ cell }: { readonly cell: ChainMatrixRow['implementation'] }) {
+  if (cell.kind === 'file') {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#1E3A5F]">
+        <FileCode size={14} className="text-slate-400 shrink-0" />
+        <span className="font-mono text-[11px] bg-slate-100 px-2 py-0.5 rounded-md">{cell.label}</span>
+      </span>
+    );
+  }
+  if (cell.kind === 'partial') {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-amber-700">
+        <FileCode size={14} className="shrink-0" />
+        <span className="font-mono text-[11px] bg-amber-50 px-2 py-0.5 rounded-md ring-1 ring-amber-200">{cell.label}</span>
+      </span>
+    );
+  }
+  return <span className="text-[12px] text-slate-400 italic">{cell.label}</span>;
 }
 
 function getSimTextColor(pct: number): string {
   if (pct >= 70) return 'text-brand-emerald';
   if (pct >= 40) return 'text-brand-gold';
   return 'text-brand-coral';
-}
-
-function getAlignTextClass(score: number): string {
-  if (score >= 80) return 'text-brand-emerald';
-  if (score >= 60) return 'text-brand-gold';
-  return 'text-brand-coral';
-}
-
-function getAlignBgClass(score: number): string {
-  if (score >= 80) return 'bg-brand-emerald';
-  if (score >= 60) return 'bg-brand-gold';
-  return 'bg-brand-coral';
-}
-
-function getStatusBorderColor(status: string): string {
-  if (status === 'PASS') return '#059669';
-  if (status === 'WARN') return '#D4AF37';
-  return '#B91C1C';
 }
 
 function getSimilarityColor(pct: number): string {
@@ -93,153 +154,47 @@ function EvidenceModal({ row, onClose }: EvidenceModalProps) {
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  const weakCount = row.traceEvidence.filter(
-    (ev) => Math.round(ev.similarityScore * 100) < 40,
-  ).length;
+  const weakCount = row.traceEvidence.filter((ev) => Math.round(ev.similarityScore * 100) < 40).length;
   const avgSim = row.traceEvidence.length > 0
-    ? Math.round(
-        row.traceEvidence.reduce((sum, ev) => sum + ev.similarityScore, 0) /
-        row.traceEvidence.length * 100,
-      )
+    ? Math.round(row.traceEvidence.reduce((sum, ev) => sum + ev.similarityScore, 0) / row.traceEvidence.length * 100)
     : 0;
-
-  let statusBadgeBg: string;
-  let statusBadgeText: string;
-  if (row.status === 'PASS') {
-    statusBadgeBg = 'bg-emerald-500/15 border-emerald-500/25';
-    statusBadgeText = 'text-emerald-400';
-  } else if (row.status === 'WARN') {
-    statusBadgeBg = 'bg-amber-500/15 border-amber-500/25';
-    statusBadgeText = 'text-amber-400';
-  } else {
-    statusBadgeBg = 'bg-red-500/15 border-red-500/25';
-    statusBadgeText = 'text-red-400';
-  }
-
-  const weakLabel = weakCount === 1 ? '1 weak link' : `${weakCount} weak links`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-      <dialog
-        className="relative w-full max-w-3xl flex flex-col max-h-[88vh] rounded-3xl overflow-hidden shadow-2xl bg-transparent p-0 m-auto"
-        open
-        aria-modal="true"
-      >
-        {/* Dark hero header */}
-        <div
-          className="px-8 py-6 shrink-0"
-          style={{ background: 'linear-gradient(135deg, #0B1521 0%, #162D4A 60%, #1E3A5F 100%)' }}
-        >
-          <div className="flex items-start justify-between mb-5">
-            <div>
-              <p className="text-[9px] font-black text-white/25 uppercase tracking-[0.25em] mb-2">Trace Evidence Report</p>
-              <div className="flex items-center gap-2">
-                <span className="text-[22px] font-black text-white tracking-tight">{row.upstreamType}</span>
-                <ChevronRight size={16} className="text-brand-gold/50" />
-                <span className="text-[22px] font-black text-white tracking-tight">{row.downstreamType}</span>
-              </div>
-              <p className="text-[11px] text-white/35 font-semibold mt-1.5">
-                Consistency analysis · {row.traceEvidence.length} evidence pairs evaluated
-              </p>
-            </div>
-            <div className="flex items-center gap-2.5 shrink-0">
-              <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl border ${statusBadgeBg} ${statusBadgeText}`}>
-                {row.status}
-              </span>
-              <button
-                type="button"
-                onClick={onClose}
-                className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/50 hover:text-white transition-all"
-                aria-label="Close"
-              >
-                <X size={16} />
-              </button>
-            </div>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
+      <dialog className="relative w-full max-w-3xl flex flex-col max-h-[88vh] rounded-2xl overflow-hidden shadow-2xl bg-white p-0 m-auto" open aria-modal="true">
+        <div className="px-6 py-5 border-b border-slate-100 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Trace Evidence</p>
+            <h3 className="text-lg font-black text-[#1E3A5F]">{row.upstreamType} → {row.downstreamType}</h3>
+            <p className="text-[12px] text-slate-500 mt-1">{row.traceEvidence.length} evidence pairs</p>
           </div>
-          {/* Stat tiles */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-            {[
-              { label: 'Alignment', value: formatScore(row.alignmentScore), color: getAlignTextClass(row.alignmentScore) },
-              { label: 'Coverage', value: formatScore(row.coverage), color: 'text-white' },
-              { label: 'Avg Similarity', value: `${avgSim}%`, color: getSimTextColor(avgSim) },
-              { label: 'Weak Matches', value: String(weakCount), color: weakCount > 0 ? 'text-red-400' : 'text-emerald-400' },
-            ].map((stat) => (
-              <div key={stat.label} className="bg-white/[0.05] rounded-2xl px-4 py-3 border border-white/[0.07]">
-                <p className="text-[9px] font-black text-white/25 uppercase tracking-[0.18em]">{stat.label}</p>
-                <p className={`text-xl font-black mt-1 ${stat.color}`}>{stat.value}</p>
-              </div>
-            ))}
-          </div>
+          <button type="button" onClick={onClose} className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500" aria-label="Close">
+            <X size={16} />
+          </button>
         </div>
-
-        {/* Scrollable body */}
-        <div className="overflow-y-auto flex-1 p-5 space-y-3" style={{ backgroundColor: '#F1F5F9' }}>
+        <div className="overflow-y-auto flex-1 p-5 space-y-3 bg-slate-50">
           {row.traceEvidence.map((ev: TraceEvidence, i: number) => {
             const pct = Math.round(ev.similarityScore * 100);
-            const isWeak = pct < 40;
-            const simColor = getSimTextColor(pct);
-            const simBg = getSimilarityColor(pct);
-            const cardBorder = isWeak ? 'border-red-200' : 'border-gray-200/60';
-            const cardBg = isWeak ? 'bg-red-50/50' : 'bg-white';
             return (
-              <div key={ev.upstreamSection} className={`rounded-2xl border ${cardBorder} ${cardBg} overflow-hidden shadow-sm`}>
-                {/* Card header */}
-                <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100/80 bg-white/60">
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-6 h-6 rounded-lg bg-brand-navy/6 flex items-center justify-center text-[10px] font-black text-brand-navy/40 ring-1 ring-brand-navy/8">
-                      {i + 1}
-                    </span>
-                    <span className="text-[11px] font-black text-brand-navy/40 uppercase tracking-widest">Match #{i + 1}</span>
-                    {isWeak ? (
-                      <span className="inline-flex items-center gap-1 text-[9px] font-black text-red-500 uppercase tracking-widest bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
-                        <AlertCircle size={9} />{'Weak Link'}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-20 h-1 bg-gray-200 rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full ${simBg}`} style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className={`text-[13px] font-black tabular-nums ${simColor}`}>{pct}%</span>
-                    {isWeak ? (
-                      <AlertCircle size={14} className="text-red-400" />
-                    ) : (
-                      <CheckCircle2 size={14} className="text-emerald-500" />
-                    )}
-                  </div>
+              <div key={`${ev.upstreamSection}-${i}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Match #{i + 1}</span>
+                  <span className={`text-sm font-black ${getSimTextColor(pct)}`}>{pct}%</span>
                 </div>
-                {/* Section columns */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 sm:divide-x divide-y sm:divide-y-0 divide-gray-100">
-                  <div className="p-5">
-                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-blue-500/80 mb-2.5 flex items-center gap-1.5">
-                      <span className="w-4 h-4 rounded-md bg-blue-500/10 inline-flex items-center justify-center text-blue-600 text-[9px] font-black">↑</span>
-                      {row.upstreamType}
-                    </p>
-                    <p className="text-[12px] text-gray-700 leading-relaxed">{ev.upstreamSection}</p>
-                  </div>
-                  <div className="p-5">
-                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-indigo-500/80 mb-2.5 flex items-center gap-1.5">
-                      <span className="w-4 h-4 rounded-md bg-indigo-500/10 inline-flex items-center justify-center text-indigo-600 text-[9px] font-black">↓</span>
-                      {row.downstreamType}
-                    </p>
-                    <p className="text-[12px] text-gray-700 leading-relaxed">{ev.downstreamSection}</p>
-                  </div>
+                <div className="grid sm:grid-cols-2 gap-3 text-[12px] text-slate-700 leading-relaxed">
+                  <div><p className="text-[9px] font-black text-blue-600 uppercase mb-1">Upstream</p>{ev.upstreamSection}</div>
+                  <div><p className="text-[9px] font-black text-indigo-600 uppercase mb-1">Downstream</p>{ev.downstreamSection}</div>
+                </div>
+                <div className="mt-2 h-1 bg-slate-100 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${getSimilarityColor(pct)}`} style={{ width: `${pct}%` }} />
                 </div>
               </div>
             );
           })}
         </div>
-
-        {/* Footer */}
-        <div className="bg-white border-t border-gray-100 px-6 py-4 flex items-center justify-between shrink-0">
-          <p className="text-[11px] text-gray-400 font-semibold">
-            {row.traceEvidence.length} pairs evaluated · {weakLabel}
-          </p>
+        <div className="px-6 py-4 border-t border-slate-100 flex justify-between items-center bg-white">
+          <p className="text-[11px] text-slate-500">Avg similarity {avgSim}% · {weakCount} weak links</p>
           <Button variant="outline" onClick={onClose}>Close</Button>
         </div>
       </dialog>
@@ -250,7 +205,12 @@ function EvidenceModal({ row, onClose }: EvidenceModalProps) {
 export const MatrixPage: React.FC = () => {
   const [selectedRow, setSelectedRow] = useState<MatrixRow | null>(null);
   const [showExport, setShowExport] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'ALL' | DisplayStatus>('ALL');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const navigate = useNavigate();
+
   const {
     workspaces,
     selectedGroupId,
@@ -262,85 +222,51 @@ export const MatrixPage: React.FC = () => {
   const audit = (auditQuery.data ?? selectedGroup?.auditResults?.[0] ?? null) as ApiAudit | null;
   const loading = isInitialLoad && !audit;
 
-  const handleWorkspaceChange = (id: string) => {
-    selectGroup(id);
-  };
+  const chainRows = useMemo(
+    () => buildChainMatrixRows((audit?.traceLinks ?? []) as ApiTraceLink[]),
+    [audit?.traceLinks],
+  );
 
-  const matrixRows: MatrixRow[] = (audit?.traceLinks ?? []).map((link: ApiTraceLink) => {
-    const linkGaps = (audit?.gaps ?? []).filter((g) => g.severity === 'CRITICAL' || g.severity === 'HIGH');
-    const criticalGaps = linkGaps.filter((g) => g.severity === 'CRITICAL').length;
-    const warnings = linkGaps.filter((g) => g.severity === 'HIGH').length;
-    const evidencePairs: TraceEvidence[] = (link.evidencePairs ?? []).map((ep) => ({
-      upstreamSection: ep.upstream,
-      downstreamSection: ep.downstream,
-      similarityScore: ep.similarity,
-    }));
-    return {
-      id: link.id,
-      upstreamType: link.upstream.type,
-      downstreamType: link.downstream.type,
-      alignmentScore: link.alignmentScore,
-      coverage: link.coverageScore ?? link.alignmentScore,
-      criticalGaps,
-      warnings,
-      status: link.status,
-      traceEvidence: evidencePairs,
-    };
-  });
+  const filteredRows = useMemo(
+    () => filterChainRows(chainRows, statusFilter, search),
+    [chainRows, statusFilter, search],
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pagedRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => { setPage(1); }, [statusFilter, search, selectedGroupId]);
 
   const overallScore = audit?.overallScore ?? 0;
   const criticalTotal = (audit?.gaps ?? []).filter((g) => g.severity === 'CRITICAL').length;
   const warnTotal = (audit?.gaps ?? []).filter((g) => g.severity === 'HIGH').length;
-  const partialPairs = matrixRows.filter((r) => r.status === 'WARN').length;
-  const missingPairs = matrixRows.filter((r) => r.status === 'FAIL').length;
-
-  const statCards = [
-    { label: 'Critical Gaps', value: criticalTotal, icon: <AlertCircle size={20} />, color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/20' },
-    { label: 'Warnings', value: warnTotal, icon: <AlertTriangle size={20} />, color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
-    { label: 'Partial Pairs', value: partialPairs, icon: <Layers size={20} />, color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
-    { label: 'Missing Pairs', value: missingPairs, icon: <XCircle size={20} />, color: 'text-slate-400', bg: 'bg-slate-500/10', border: 'border-slate-500/20' },
-  ];
+  const partialCount = chainRows.filter((r) => r.displayStatus === 'PARTIAL').length;
+  const missingCount = chainRows.filter((r) => r.displayStatus === 'MISSING').length;
 
   const workspaceSelector = workspaces.length > 1 ? (
-    <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+    <div className="relative inline-flex items-center">
       <select
         value={selectedGroupId}
-        onChange={(e) => handleWorkspaceChange(e.target.value)}
-        style={{
-          appearance: 'none' as const,
-          WebkitAppearance: 'none' as const,
-          backgroundColor: 'rgba(255,255,255,0.10)',
-          border: '1px solid rgba(212,175,55,0.35)',
-          borderRadius: '12px',
-          color: '#ffffff',
-          fontSize: '13px',
-          fontWeight: 700,
-          padding: '10px 40px 10px 16px',
-          cursor: 'pointer',
-          outline: 'none',
-          minWidth: '0',
-          width: '100%',
-          maxWidth: '280px',
-        }}
+        onChange={(e) => selectGroup(e.target.value)}
+        className="appearance-none rounded-xl border border-[rgba(212,175,55,0.35)] bg-white/10 text-white text-[13px] font-bold py-2.5 pl-4 pr-10 outline-none cursor-pointer min-w-[200px] max-w-[280px]"
       >
         {workspaces.map((ws) => (
-          <option key={ws.id} value={ws.id} style={{ backgroundColor: '#1E3A5F', color: '#fff' }}>
+          <option key={ws.id} value={ws.id} className="bg-[#1E3A5F] text-white">
             {ws.projectTitle || ws.name}
           </option>
         ))}
       </select>
-      <ChevronDown size={14} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', color: '#D4AF37', pointerEvents: 'none' }} />
+      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#D4AF37] pointer-events-none" />
     </div>
   ) : null;
 
   if (loading) {
     return (
-      <Layout title="Traceability Matrix" subtitle="AI-generated cross-document alignment scores and traceability pairs" badge="Audit Results" heroIcon={<Layers size={26} />} headerAction={workspaceSelector}>
+      <Layout title="Traceability Matrix" subtitle="Track requirements from objectives through to code" badge="Audit" heroIcon={<Layers size={26} />} headerAction={workspaceSelector}>
         <div className="flex flex-col items-center justify-center py-28 gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-primary/5 flex items-center justify-center">
-            <Layers size={26} className="text-primary/30" />
-          </div>
-          <p className="text-sm font-semibold text-gray-400 animate-pulse">Fetching audit results…</p>
+          <div className="w-10 h-10 border-2 border-slate-200 border-t-[#1E3A5F] rounded-full animate-spin" />
+          <p className="text-sm font-semibold text-slate-400">Loading traceability matrix…</p>
         </div>
       </Layout>
     );
@@ -348,259 +274,235 @@ export const MatrixPage: React.FC = () => {
 
   if (!audit) {
     return (
-      <Layout title="Traceability Matrix" subtitle="AI-generated cross-document alignment scores and traceability pairs" badge="Audit Results" heroIcon={<Layers size={26} />} headerAction={workspaceSelector}>
-        <div className="flex flex-col items-center justify-center py-24 gap-3 text-center">
-          <div className="w-20 h-20 rounded-3xl bg-primary/5 flex items-center justify-center mb-2">
-            <Layers size={36} className="text-primary/20" />
-          </div>
-          <p className="text-xl font-black text-brand-navy tracking-tight">No Audit Results Found</p>
-          <p className="text-sm text-gray-400 font-medium max-w-xs leading-relaxed">
-            Upload your project artifacts and run the traceability audit to generate cross-document alignment scores.
-          </p>
-          <Button onClick={() => navigate('/artifacts')} className="mt-2">
-            Go to Artifacts → Run Audit
-          </Button>
+      <Layout title="Traceability Matrix" subtitle="Track requirements from objectives through to code" badge="Audit" heroIcon={<Layers size={26} />} headerAction={workspaceSelector}>
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
+          <Layers size={40} className="mx-auto text-slate-300 mb-4" />
+          <p className="text-lg font-black text-[#1E3A5F]">No audit results yet</p>
+          <p className="text-sm text-slate-500 mt-2 max-w-md mx-auto">Upload artifacts and run the traceability audit to populate the matrix.</p>
+          <Button onClick={() => navigate('/artifacts')} className="mt-6">Go to Artifacts</Button>
         </div>
       </Layout>
     );
   }
 
   const readiness = audit.readinessStatus;
-  let readinessText: string;
-  let readinessIcon: React.ReactNode;
-  if (readiness === 'READY') {
-    readinessText = 'Ready for Submission';
-    readinessIcon = <CheckCircle2 size={16} className="text-success shrink-0" />;
-  } else if (readiness === 'NEEDS_REVISION') {
-    readinessText = 'Needs Revision';
-    readinessIcon = <Info size={16} className="text-warning shrink-0" />;
-  } else {
-    readinessText = 'Critical Gaps Detected';
-    readinessIcon = <AlertCircle size={16} className="text-critical shrink-0" />;
-  }
-
-  const criticalIssueText = criticalTotal === 0
-    ? `All ${matrixRows.length} document pairs verified \u2014 no structural blockers found`
-    : `${criticalTotal} critical issues and ${warnTotal} warnings require attention before submission`;
-
-  let healthTierLabel: string;
-  let healthTierColor: string;
-  if (overallScore >= 80) {
-    healthTierLabel = 'Excellent';
-    healthTierColor = 'text-[#059669]';
-  } else if (overallScore >= 60) {
-    healthTierLabel = 'Caution';
-    healthTierColor = 'text-brand-gold';
-  } else {
-    healthTierLabel = 'Critical';
-    healthTierColor = 'text-red-500';
-  }
-
-  let readinessBgDark: string;
-  let readinessIconBgDark: string;
-  let readinessIconColorDark: string;
-  if (readiness === 'READY') {
-    readinessBgDark = 'bg-emerald-500/10 border border-emerald-500/20';
-    readinessIconBgDark = 'bg-emerald-500/20';
-    readinessIconColorDark = 'text-emerald-400';
-  } else if (readiness === 'NEEDS_REVISION') {
-    readinessBgDark = 'bg-amber-500/10 border border-amber-500/20';
-    readinessIconBgDark = 'bg-amber-500/20';
-    readinessIconColorDark = 'text-amber-400';
-  } else {
-    readinessBgDark = 'bg-red-500/10 border border-red-500/20';
-    readinessIconBgDark = 'bg-red-500/20';
-    readinessIconColorDark = 'text-red-400';
-  }
-  const readinessIconDark = React.cloneElement(
-    readinessIcon as React.ReactElement<{ size?: number; className?: string }>,
-    { size: 22, className: readinessIconColorDark },
-  );
+  const readinessText = readiness === 'READY'
+    ? 'Ready for Submission'
+    : readiness === 'NEEDS_REVISION'
+      ? 'Needs Revision'
+      : 'Critical Gaps Detected';
+  const readinessSub = criticalTotal === 0
+    ? 'All critical issues resolved — no structural blockers found.'
+    : `${criticalTotal} critical and ${warnTotal} high-severity gaps need attention before submission.`;
 
   return (
     <Layout
       title="Traceability Matrix"
-      subtitle="AI-generated cross-document alignment scores and traceability pairs"
-      badge="Audit Results"
+      subtitle="Track project requirements from objectives through to code implementation"
+      badge="Audit"
       heroIcon={<Layers size={26} />}
       headerAction={workspaceSelector}
     >
-      <div className="space-y-5">
-        {/* ── SUMMARY HERO PANEL ── */}
-        <div className="rounded-3xl overflow-hidden shadow-2xl shadow-brand-navy/15" style={{ background: 'linear-gradient(135deg, #0B1521 0%, #162D4A 60%, #1E3A5F 100%)' }}>
-          <div className="p-4 sm:p-6 lg:p-7">
-            <div className="flex flex-col xl:flex-row items-stretch gap-4 sm:gap-6">
-              {/* Gauge pod */}
-              <div className="flex flex-col items-center justify-center bg-white rounded-2xl shadow-xl px-6 py-5 sm:px-8 sm:py-6 w-full xl:w-auto xl:min-w-[190px] shrink-0">
-                <AlignmentGauge score={overallScore} />
-                <div className="mt-3 text-center border-t border-gray-100 pt-3 w-full">
-                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-brand-navy/30">Health Tier</p>
-                  <p className={`text-[13px] font-black mt-0.5 ${healthTierColor}`}>{healthTierLabel}</p>
-                </div>
-              </div>
-              {/* Right column */}
-              <div className="flex-1 flex flex-col gap-4">
-                {/* Stat tiles */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-                  {statCards.map((s) => (
-                    <div key={s.label} className="relative rounded-2xl bg-white/[0.04] border border-white/[0.07] p-5 overflow-hidden flex flex-col">
-                      <div className={`absolute -top-4 -right-4 w-16 h-16 rounded-full ${s.bg} opacity-40 pointer-events-none`} />
-                      <div className={`w-9 h-9 rounded-xl ${s.bg} border ${s.border} flex items-center justify-center ${s.color} mb-3 shrink-0`}>
-                        {s.icon}
-                      </div>
-                      <p className={`text-4xl font-black tracking-tight ${s.color}`}>{s.value}</p>
-                      <p className="text-[10px] text-white/30 font-black uppercase tracking-[0.15em] mt-1">{s.label}</p>
-                    </div>
-                  ))}
-                </div>
-                {/* Readiness strip */}
-                <div className={`rounded-2xl flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 sm:gap-4 px-4 py-4 sm:px-6 ${readinessBgDark}`}>
-                  <div className="flex items-center gap-4 min-w-0 flex-1">
-                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${readinessIconBgDark}`}>
-                      {readinessIconDark}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm sm:text-[15px] font-black text-white tracking-tight">{readinessText}</p>
-                      <p className="text-[11px] sm:text-[12px] text-white/40 font-medium mt-0.5 line-clamp-2 sm:truncate">{criticalIssueText}</p>
-                    </div>
+      <div className="space-y-5 pb-6">
+        {/* Summary panel */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-5 sm:p-6 lg:p-8 flex flex-col lg:flex-row gap-6 lg:gap-8 items-stretch">
+            <AlignmentGauge score={overallScore} />
+            <div className="flex-1 flex flex-col gap-4 min-w-0">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {[
+                  { label: 'Critical Items', value: criticalTotal, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-100', icon: <AlertCircle size={18} className="text-red-500" /> },
+                  { label: 'Warnings', value: warnTotal, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100', icon: <AlertTriangle size={18} className="text-amber-500" /> },
+                  { label: 'Partial Items', value: partialCount, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100', icon: <Info size={18} className="text-blue-500" /> },
+                  { label: 'Missing Items', value: missingCount, color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200', icon: <XCircle size={18} className="text-slate-400" /> },
+                ].map((stat) => (
+                  <div key={stat.label} className={`rounded-xl border ${stat.border} ${stat.bg} px-4 py-4`}>
+                    <div className="flex items-center gap-2 mb-2">{stat.icon}</div>
+                    <p className={`text-3xl font-black tracking-tight ${stat.color}`}>{stat.value}</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-1">{stat.label}</p>
                   </div>
-                  <div className="flex flex-col sm:flex-row gap-2 sm:ml-auto w-full sm:w-auto">
+                ))}
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3.5">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  <CheckCircle2 size={20} className="text-emerald-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-black text-emerald-900">{readinessText}</p>
+                    <p className="text-[12px] text-emerald-700/80 mt-0.5">{readinessSub}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 shrink-0">
                   <button
                     type="button"
                     onClick={() => navigate('/diagnostics')}
-                    className="flex-1 sm:flex-none text-center text-[11px] sm:text-[12px] font-black text-white/60 hover:text-brand-gold border border-white/10 hover:border-brand-gold/40 rounded-xl px-3 py-2.5 sm:px-4 transition-all duration-200"
+                    className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-[12px] font-bold text-slate-700 hover:border-slate-300 transition-colors"
                   >
-                    View Gap Analysis →
+                    View Gap Analysis
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowExport(true)}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-[11px] sm:text-[12px] font-black text-white/60 hover:text-brand-gold border border-white/10 hover:border-brand-gold/40 rounded-xl px-3 py-2.5 sm:px-4 transition-all duration-200"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1E3A5F] text-white text-[12px] font-bold hover:bg-[#162D4A] transition-colors"
                   >
-                    <Download size={13} />
+                    <Download size={14} />
                     Export Report
                   </button>
-                  </div>
                 </div>
               </div>
             </div>
           </div>
-          {/* Threshold legend strip */}
-          <div className="border-t border-white/[0.05] bg-white/[0.02] px-4 sm:px-7 py-3 sm:py-4 flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center gap-3 sm:gap-6 lg:gap-10">
-            <p className="text-[9px] font-black text-white/20 uppercase tracking-[0.25em] whitespace-nowrap shrink-0">
-              Thresholds
-            </p>
-            {[
-              { range: '≥ 80%', title: 'Excellent', text: 'Trace integrity verified', color: 'text-emerald-400', dot: 'bg-emerald-500' },
-              { range: '60–79%', title: 'Caution', text: 'Minor drift detected', color: 'text-amber-400', dot: 'bg-amber-500' },
-              { range: '< 60%', title: 'Critical', text: 'High architectural risk', color: 'text-red-400', dot: 'bg-red-500' },
-            ].map((item) => (
-              <div key={item.title} className="flex items-center gap-3">
-                <div className={`w-2 h-2 rounded-full ${item.dot} shrink-0`} />
-                <span className={`text-[12px] font-black ${item.color}`}>{item.title}</span>
-                <span className="text-[10px] font-mono bg-white/[0.06] px-1.5 py-0.5 rounded-md text-white/35">{item.range}</span>
-                <span className="text-[11px] text-white/25 font-medium">{item.text}</span>
-              </div>
-            ))}
-          </div>
         </div>
 
-        {/* ── MATRIX TABLE ── */}
-        <Card padding="none" className="bg-white overflow-hidden">
-          <div className="px-4 sm:px-8 py-4 sm:py-5 border-b border-gray-100/80 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
-            <div>
-              <h3 className="text-[17px] font-black text-brand-navy tracking-tight">Traceability Matrix</h3>
-              <p className="text-[12px] text-brand-slate/60 font-semibold mt-0.5">Cross-reference analysis between adjacent engineering phases</p>
+        {/* Matrix table */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-4 sm:px-6 py-4 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center gap-4 lg:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {STATUS_TABS.map((tab) => {
+                const active = statusFilter === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setStatusFilter(tab.id)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-bold transition-colors ${
+                      active
+                        ? 'bg-[#1E3A5F] text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {tab.icon}
+                    {tab.label}
+                  </button>
+                );
+              })}
             </div>
-            <span className="inline-flex items-center gap-1.5 text-[10px] font-black text-brand-gold uppercase tracking-widest px-3 py-1.5 bg-brand-gold/10 rounded-full border border-brand-gold/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-brand-gold animate-pulse" aria-hidden="true"></span>{'Live Audit Data'}
-            </span>
+            <div className="flex items-center gap-2 w-full lg:w-auto">
+              <div className="relative flex-1 lg:w-56">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search…"
+                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 text-[13px] outline-none focus:border-[#1E3A5F]/40 focus:ring-2 focus:ring-[#1E3A5F]/10"
+                />
+              </div>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 text-[12px] font-bold text-slate-600 hover:bg-slate-50"
+              >
+                <Filter size={14} />
+                Filter
+              </button>
+            </div>
           </div>
+
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[1100px]">
               <thead>
-                <tr className="border-b border-gray-100 bg-slate-50/50">
-                  <th className="text-left px-8 py-4 text-[10px] font-black text-brand-navy/30 uppercase tracking-[0.2em]">Artifact Pair</th>
-                  <th className="text-right px-4 py-4 text-[10px] font-black text-brand-navy/30 uppercase tracking-[0.2em]">Alignment</th>
-                  <th className="text-right px-4 py-4 text-[10px] font-black text-brand-navy/30 uppercase tracking-[0.2em]">Coverage</th>
-                  <th className="text-center px-4 py-4 text-[10px] font-black text-brand-navy/30 uppercase tracking-[0.2em]">Critical</th>
-                  <th className="text-center px-4 py-4 text-[10px] font-black text-brand-navy/30 uppercase tracking-[0.2em]">Warnings</th>
-                  <th className="text-center px-6 py-4 text-[10px] font-black text-brand-navy/30 uppercase tracking-[0.2em]">Status</th>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  {['Status', 'Proposal Objective', 'SRS Requirement', 'SDD Component', 'SPMP Deliverable', 'STD Coverage', 'Implementation (Code)'].map((col) => (
+                    <th key={col} className="text-left px-4 py-3.5 text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] whitespace-nowrap">
+                      {col}
+                    </th>
+                  ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100/60">
-                {matrixRows.map((row) => (
-                  <tr
-                    key={row.id}
-                    onClick={() => setSelectedRow(row)}
-                    className="hover:bg-slate-50/70 transition-colors cursor-pointer group"
-                    style={{ borderLeft: `3px solid ${getStatusBorderColor(row.status)}30` }}
-                  >
-                    <td className="px-8 py-5">
-                      <div className="flex items-center gap-4">
-                        <div className="w-9 h-9 rounded-xl bg-brand-navy/5 flex items-center justify-center text-brand-navy font-black text-xs ring-1 ring-brand-navy/10 group-hover:bg-brand-navy group-hover:text-white transition-all duration-200 shrink-0">
-                          {row.upstreamType.charAt(0)}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[13px] font-black text-brand-navy uppercase tracking-tight">{row.upstreamType}</span>
-                            <ChevronRight size={11} className="text-brand-navy/20" />
-                            <span className="text-[13px] font-black text-brand-navy uppercase tracking-tight">{row.downstreamType}</span>
-                          </div>
-                          <span className="text-[11px] text-brand-slate/45 font-semibold">Consistency Check · {row.traceEvidence.length} evidence pairs</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-5 text-right">
-                      <div className="flex flex-col items-end gap-1.5">
-                        <span className={`text-[15px] font-black ${getAlignTextClass(row.alignmentScore)}`}>{formatScore(row.alignmentScore)}</span>
-                        <div className="w-20 h-1 bg-gray-100 rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full ${getAlignBgClass(row.alignmentScore)}`} style={{ width: `${row.alignmentScore}%` }} />
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-5 text-right">
-                      <span className="text-[14px] font-bold text-brand-navy/60">{formatScore(row.coverage)}</span>
-                    </td>
-                    <td className="px-4 py-5 text-center">
-                      {row.criticalGaps > 0 ? (
-                        <span className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-red-50 text-red-500 text-[13px] font-black ring-1 ring-red-100">
-                          {row.criticalGaps}
-                        </span>
-                      ) : (
-                        <span className="text-brand-navy/10 font-bold">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-5 text-center">
-                      {row.warnings > 0 ? (
-                        <span className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-amber-50 text-amber-500 text-[13px] font-black ring-1 ring-amber-100">
-                          {row.warnings}
-                        </span>
-                      ) : (
-                        <span className="text-brand-navy/10 font-bold">—</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-5 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <Badge variant={matrixStatusToBadge(row.status)} className="font-black text-[10px] tracking-widest px-3 py-1 uppercase">
-                          {row.status}
-                        </Badge>
-                        <div className="w-7 h-7 rounded-full border border-gray-100 flex items-center justify-center text-gray-300 group-hover:border-brand-gold group-hover:text-brand-gold transition-all duration-200">
-                          <ChevronRight size={13} />
-                        </div>
-                      </div>
+              <tbody className="divide-y divide-slate-100">
+                {pagedRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-16 text-center text-sm text-slate-500">
+                      No rows match your filters.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  pagedRows.map((row) => (
+                    <tr
+                      key={row.id}
+                      onClick={() => setSelectedRow(row.matrixRow)}
+                      className="hover:bg-slate-50/80 cursor-pointer transition-colors"
+                    >
+                      <td className="px-4 py-4 align-top whitespace-nowrap">
+                        <StatusBadge status={row.displayStatus} />
+                      </td>
+                      <td className="px-4 py-4 align-top text-[13px] font-semibold text-[#1E3A5F] max-w-[200px]">{row.proposalObjective}</td>
+                      <td className="px-4 py-4 align-top text-[12px] text-slate-700 max-w-[200px] leading-snug">{row.srsRequirement}</td>
+                      <td className="px-4 py-4 align-top text-[12px] text-slate-600 max-w-[180px]">
+                        {row.sddComponent ?? <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="px-4 py-4 align-top text-[12px] text-slate-600 max-w-[180px]">
+                        {row.spmpDeliverable ?? <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="px-4 py-4 align-top text-[12px] text-slate-600 max-w-[180px]">
+                        {row.stdCoverage ?? <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="px-4 py-4 align-top max-w-[200px]">
+                        <ImplementationCellView cell={row.implementation} />
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
-        </Card>
+
+          <div className="px-4 sm:px-6 py-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50/50">
+            <div className="flex items-center gap-2 text-[12px] text-slate-500">
+              <span className="font-semibold">{pageSize} per page</span>
+              <select
+                value={pageSize}
+                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[12px] font-semibold text-slate-700 outline-none"
+              >
+                {[10, 20, 50].map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+              <span className="text-slate-400">· {filteredRows.length} rows</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 disabled:opacity-40 hover:bg-white"
+                aria-label="Previous page"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                const pageNum = totalPages <= 5 ? i + 1 : Math.max(1, Math.min(currentPage - 2, totalPages - 4)) + i;
+                if (pageNum > totalPages) return null;
+                return (
+                  <button
+                    key={pageNum}
+                    type="button"
+                    onClick={() => setPage(pageNum)}
+                    className={`min-w-8 h-8 px-2 rounded-lg text-[12px] font-bold ${
+                      pageNum === currentPage
+                        ? 'bg-[#1E3A5F] text-white'
+                        : 'border border-slate-200 text-slate-600 hover:bg-white'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 disabled:opacity-40 hover:bg-white"
+                aria-label="Next page"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {selectedRow && (
-        <EvidenceModal row={selectedRow} onClose={() => setSelectedRow(null)} />
-      )}
+      {selectedRow && <EvidenceModal row={selectedRow} onClose={() => setSelectedRow(null)} />}
       {showExport && audit && (
         <ExportModal
           onClose={() => setShowExport(false)}
