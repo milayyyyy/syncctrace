@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -12,9 +12,8 @@ import {
   Target,
   Users,
   X,
-  Sparkles,
-  Layers,
-  Filter,
+  FileText,
+  ClipboardList,
 } from 'lucide-react';
 import { Layout } from '../components/shared/Layout';
 import { ExportModal } from '../components/shared/ExportModal';
@@ -31,33 +30,198 @@ interface ApiLink extends ApiTraceLink {
   evidencePairs: Array<{ upstream: string; downstream: string; similarity: number }>;
 }
 
-const severityIcon: Record<Severity, React.ReactNode> = {
-  CRITICAL: <AlertCircle size={14} className="text-critical" />,
-  HIGH: <AlertTriangle size={14} className="text-orange-500" />,
-  MEDIUM: <Info size={14} className="text-warning" />,
-  LOW: <CheckCircle2 size={14} className="text-blue-500" />,
+const DOC_LABELS: Record<string, string> = {
+  PROPOSAL: 'Proposal',
+  SRS: 'Requirements (SRS)',
+  SDD: 'Design (SDD)',
+  SPMP: 'Project Plan (SPMP)',
+  STD: 'Test Document (STD)',
+  SOURCE_CODE: 'Source Code',
 };
 
-const gapTypeLabel: Record<string, string> = {
-  MISSING_LINK: 'Missing Link',
-  INCONSISTENCY: 'Inconsistency',
-  IMPLEMENTATION_GAP: 'Implementation Gap',
-  TERMINOLOGY_DRIFT: 'Terminology Drift',
-  DOWNSTREAM_OMISSION: 'Downstream Omission',
+const SEVERITY_LABELS: Record<Severity, string> = {
+  CRITICAL: 'Critical',
+  HIGH: 'High',
+  MEDIUM: 'Medium',
+  LOW: 'Low',
 };
+
+const severityIcon: Record<Severity, React.ReactNode> = {
+  CRITICAL: <AlertCircle size={18} className="text-red-600" />,
+  HIGH: <AlertTriangle size={18} className="text-orange-500" />,
+  MEDIUM: <Info size={18} className="text-amber-500" />,
+  LOW: <CheckCircle2 size={18} className="text-blue-500" />,
+};
+
+function docLabel(type: string): string {
+  return DOC_LABELS[type] ?? type.replaceAll('_', ' ');
+}
+
+function linkStatusLabel(status: string): { label: string; className: string } {
+  if (status === 'PASS') {
+    return { label: 'Good', className: 'bg-emerald-50 text-emerald-800 ring-emerald-200' };
+  }
+  if (status === 'WARN') {
+    return { label: 'Needs review', className: 'bg-amber-50 text-amber-800 ring-amber-200' };
+  }
+  return { label: 'Action needed', className: 'bg-red-50 text-red-800 ring-red-200' };
+}
+
+function scoreColor(score: number): string {
+  if (score >= 80) return '#059669';
+  if (score >= 60) return '#B45309';
+  return '#B91C1C';
+}
+
+function GapDetailPanel({ gap, onClose }: { readonly gap: ApiGap; readonly onClose: () => void }) {
+  return (
+    <Card padding="none" className="overflow-hidden border border-slate-200 shadow-lg rounded-2xl bg-white">
+      <div className="px-6 py-5 border-b border-slate-100 bg-slate-50 flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold text-slate-500 mb-1">Issue details</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant={severityToBadge(gap.severity)}>{SEVERITY_LABELS[gap.severity]}</Badge>
+            {gap.affectedArtifacts?.map((a) => (
+              <span key={a} className="text-xs font-medium text-slate-600 bg-white px-2 py-0.5 rounded-md ring-1 ring-slate-200">
+                {docLabel(a)}
+              </span>
+            ))}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="shrink-0 w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+          aria-label="Close issue details"
+        >
+          <X size={18} />
+        </button>
+      </div>
+
+      <div className="p-6 space-y-6">
+        <div>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">What was found</p>
+          <p className="text-base text-slate-800 leading-relaxed">{gap.description}</p>
+        </div>
+
+        <div className="rounded-xl bg-amber-50 border border-amber-100 p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <Target size={16} className="text-amber-700" />
+            <p className="text-sm font-semibold text-amber-900">Why this happened</p>
+          </div>
+          <p className="text-sm text-amber-950 leading-relaxed">{gap.rootCause}</p>
+        </div>
+
+        <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <Lightbulb size={16} className="text-emerald-700" />
+            <p className="text-sm font-semibold text-emerald-900">Suggested fix for the team</p>
+          </div>
+          <p className="text-sm text-emerald-950 leading-relaxed">{gap.recommendation}</p>
+        </div>
+
+        <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-4 text-sm">
+          <div>
+            <p className="text-slate-500 mb-0.5">AI confidence</p>
+            <p className="font-semibold text-slate-800">{(gap.aiConfidence * 100).toFixed(0)}%</p>
+          </div>
+          <div className="text-right">
+            <p className="text-slate-500 mb-0.5">Reported on</p>
+            <p className="font-semibold text-slate-800">
+              {gap.createdAt
+                ? new Date(gap.createdAt).toLocaleDateString(undefined, {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })
+                : '—'}
+            </p>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function TeamInfoPanel({ group }: { readonly group: NonNullable<ReturnType<typeof useProject>['data']> }) {
+  const lead = group.members[0];
+  const members = group.members.slice(1);
+
+  return (
+    <Card className="p-6 rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-11 h-11 rounded-xl bg-[#1E3A5F] flex items-center justify-center text-[#D4AF37]">
+          <Users size={22} />
+        </div>
+        <div>
+          <h3 className="text-lg font-bold text-slate-900">Team information</h3>
+          <p className="text-sm text-slate-500">Team code: <span className="font-semibold text-slate-700">{group.teamCode}</span></p>
+        </div>
+      </div>
+
+      {lead && (
+        <div className="mb-5 p-4 rounded-xl bg-slate-50 border border-slate-100">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Team lead</p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-[#1E3A5F] text-white flex items-center justify-center text-sm font-bold">
+              {lead.name.charAt(0)}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-900 truncate">{lead.name}</p>
+              <p className="text-sm text-slate-500 truncate">{lead.email}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {members.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Team members</p>
+          <ul className="space-y-2">
+            {members.map((m) => (
+              <li key={m.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-slate-50">
+                <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center text-xs font-bold">
+                  {m.name.charAt(0)}
+                </div>
+                <p className="text-sm font-medium text-slate-800 truncate">{m.name}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 export const GroupDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [selectedGap, setSelectedGap] = useState<ApiGap | null>(null);
-  const [selectedRow, setSelectedRow] = useState<MatrixRow | null>(null);
   const [showExport, setShowExport] = useState(false);
   const [gapFilter, setGapFilter] = useState<Severity | 'ALL'>('ALL');
   const { data: group, isPending: loading } = useProject(id);
 
+  const latestAudit = group?.auditResults[0];
+  const severityOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+  const allGaps: ApiGap[] = [...(latestAudit?.gaps ?? [])].sort(
+    (a, b) => (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99),
+  );
+  const gaps = allGaps.filter((g) => gapFilter === 'ALL' || g.severity === gapFilter);
+
+  useEffect(() => {
+    if (gaps.length === 0) {
+      setSelectedGap(null);
+      return;
+    }
+    const stillVisible = selectedGap && gaps.some((g) => g.id === selectedGap.id);
+    if (!stillVisible) {
+      setSelectedGap(gaps[0]);
+    }
+  }, [gaps, selectedGap]);
+
   if (loading) {
     return (
-      <Layout title="Group Detail" badge="Team Overview" heroIcon={<Users size={26} />}>
+      <Layout title="Group Detail" badge="Faculty" heroIcon={<Users size={26} />}>
         <div className="flex items-center justify-center py-20"><Spinner size="lg" /></div>
       </Layout>
     );
@@ -65,25 +229,20 @@ export const GroupDetailPage: React.FC = () => {
 
   if (!group) {
     return (
-      <Layout title="Group Not Found" badge="Team Overview" heroIcon={<Users size={26} />}>
+      <Layout title="Group Not Found" badge="Faculty" heroIcon={<Users size={26} />}>
         <div className="text-center py-20">
-          <p className="text-gray-500 mb-4">The requested group could not be found.</p>
-          <Button onClick={() => navigate('/faculty')}>← Back to Dashboard</Button>
+          <p className="text-slate-600 mb-4">This team could not be found.</p>
+          <Button onClick={() => navigate('/faculty')}>← Back to dashboard</Button>
         </div>
       </Layout>
     );
   }
 
-  const latestAudit = group.auditResults[0];
-  const severityOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-  const allGaps: ApiGap[] = [...(latestAudit?.gaps ?? [])].sort((a, b) => (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99));
-  const gaps = allGaps.filter(g => gapFilter === 'ALL' || g.severity === gapFilter);
   const healthScore = latestAudit?.overallScore ?? 0;
   const readinessStatus: ReadinessStatus = latestAudit?.readinessStatus ?? 'NEEDS_REVISION';
-
   const criticalGaps = allGaps.filter((g) => g.severity === 'CRITICAL').length;
-  const warnings = allGaps.filter((g) => g.severity === 'HIGH').length;
-
+  const highGaps = allGaps.filter((g) => g.severity === 'HIGH').length;
+  const mediumGaps = allGaps.filter((g) => g.severity === 'MEDIUM').length;
   const exportAudit = latestAudit ? toExportAudit(latestAudit) : null;
 
   const matrixRows: MatrixRow[] = (latestAudit?.traceLinks ?? []).map((link: ApiLink) => ({
@@ -93,7 +252,7 @@ export const GroupDetailPage: React.FC = () => {
     alignmentScore: link.alignmentScore,
     coverage: link.alignmentScore,
     criticalGaps,
-    warnings,
+    warnings: highGaps,
     status: link.status,
     traceEvidence: (link.evidencePairs ?? []).map((ep): TraceEvidence => ({
       upstreamSection: ep.upstream,
@@ -102,377 +261,234 @@ export const GroupDetailPage: React.FC = () => {
     })),
   }));
 
+  const healthLabel = healthScore >= 80 ? 'Strong alignment' : healthScore >= 60 ? 'Needs improvement' : 'Significant gaps';
+
   return (
     <Layout
       title={group.projectTitle}
-      subtitle={`Team ${group.teamCode} — Research Protocol Review`}
-      badge="Adviser Portal"
-      heroIcon={<Target size={26} />}
+      subtitle={`Team ${group.teamCode} — Capstone document review`}
+      badge="Faculty"
+      heroIcon={<ClipboardList size={26} />}
       headerAction={
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 flex-wrap">
           <Badge variant={readinessToBadge(readinessStatus)} dot>
             {readinessLabel(readinessStatus)}
           </Badge>
           <button
+            type="button"
             onClick={() => setShowExport(true)}
-            className="flex items-center gap-2.5 px-6 py-2.5 bg-brand-gold text-brand-navy rounded-xl text-[12px] font-black uppercase tracking-widest hover:bg-[#c9a227] transition-all shadow-lg active:scale-95"
+            className="flex items-center gap-2 px-5 py-2.5 bg-[#D4AF37] text-[#1E3A5F] rounded-xl text-sm font-semibold hover:bg-[#c9a227] transition-colors shadow-sm"
           >
-            <Download size={15} />
-            Export Protocol
+            <Download size={16} />
+            Export report
           </button>
         </div>
       }
     >
-      {/* ── Dashboard Top Bar ─────────────────────────────────────────── */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8">
+      {/* Top summary bar */}
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between mb-8">
         <button
+          type="button"
           onClick={() => navigate('/faculty')}
-          className="group flex items-center gap-3 text-[11px] font-black uppercase tracking-[0.2em] text-brand-navy/30 hover:text-brand-navy transition-all"
+          className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-[#1E3A5F] transition-colors w-fit"
         >
-          <div className="w-8 h-8 rounded-full bg-brand-navy/5 flex items-center justify-center group-hover:bg-brand-navy group-hover:text-white transition-all">
-            <ArrowLeft size={14} />
-          </div>
-          Registry Dashboard
+          <ArrowLeft size={18} />
+          Back to faculty dashboard
         </button>
 
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-8 w-full sm:w-auto">
-          <div className="flex items-center justify-between sm:justify-start gap-4 sm:gap-8 sm:border-r sm:border-brand-navy/5 sm:pr-8 lg:pr-12">
-            {[
-              { label: 'Critical', value: criticalGaps, color: 'text-brand-coral' },
-              { label: 'High', value: warnings, color: 'text-brand-gold' },
-              { label: 'Resolved', value: matrixRows.length, color: 'text-brand-emerald' },
-            ].map((stat) => (
-              <div key={stat.label} className="text-right">
-                <p className="text-[9px] font-black text-brand-navy/30 uppercase tracking-[0.2em] mb-1">{stat.label}</p>
-                <p className={`text-xl font-black tracking-tight ${stat.color}`}>{stat.value}</p>
-              </div>
-            ))}
-          </div>
-          <div className="text-right">
-            <p className="text-[10px] font-black text-brand-navy/30 uppercase tracking-[0.2em] mb-1">Lifecycle Health</p>
-            {(() => {
-              let scoreColor = '#B91C1C';
-              if (healthScore >= 80) scoreColor = '#059669';
-              else if (healthScore >= 60) scoreColor = '#D4AF37';
-              return (
-                <p className="text-4xl font-black tracking-tight" style={{ color: scoreColor }}>
-                  {healthScore.toFixed(1)}%
-                </p>
-              );
-            })()}
-          </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+          {[
+            { label: 'Critical issues', value: criticalGaps, color: 'text-red-600', bg: 'bg-red-50' },
+            { label: 'High priority', value: highGaps, color: 'text-orange-600', bg: 'bg-orange-50' },
+            { label: 'Medium priority', value: mediumGaps, color: 'text-amber-600', bg: 'bg-amber-50' },
+            { label: 'Overall score', value: `${healthScore.toFixed(0)}%`, color: '', bg: 'bg-slate-50', score: true },
+          ].map((stat) => (
+            <div key={stat.label} className={`rounded-xl px-4 py-3 ${stat.bg} border border-slate-100`}>
+              <p className="text-xs font-medium text-slate-500 mb-1">{stat.label}</p>
+              {'score' in stat && stat.score ? (
+                <p className="text-2xl font-bold" style={{ color: scoreColor(healthScore) }}>{stat.value}</p>
+              ) : (
+                <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
+              )}
+            </div>
+          ))}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* ── Left Column: Matrix & Detailed Analysis ─────────────────── */}
-        <div className="lg:col-span-6 space-y-8">
+      <p className="text-sm text-slate-600 mb-8 -mt-4">
+        Overall alignment: <span className="font-semibold text-slate-800">{healthLabel}</span>
+        {latestAudit?.auditedAt && (
+          <> · Last reviewed {new Date(latestAudit.auditedAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}</>
+        )}
+      </p>
 
-          {/* Traceability Matrix Section */}
-          <section className="space-y-4">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-2xl bg-brand-navy flex items-center justify-center text-brand-gold shadow-lg rotate-3 shrink-0">
-                <Layers size={18} />
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+        {/* Left: alignment table + issues list */}
+        <div className="xl:col-span-7 space-y-8">
+          {/* Document alignment */}
+          <section>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-[#1E3A5F] flex items-center justify-center text-[#D4AF37]">
+                <FileText size={20} />
               </div>
               <div>
-                <h3 className="text-[16px] font-black text-brand-navy uppercase tracking-tight">Traceability Matrix</h3>
-                <p className="text-[11px] text-brand-navy/40 font-bold uppercase tracking-widest">Alignment over Artifact Lifecycle</p>
+                <h2 className="text-lg font-bold text-slate-900">Document alignment</h2>
+                <p className="text-sm text-slate-500">How well each project document connects to the next</p>
               </div>
-              <div className="h-[1px] flex-1 bg-brand-navy/5" />
             </div>
 
-            <Card padding="none" className="overflow-hidden border-none shadow-sm ring-1 ring-brand-navy/5">
+            <Card padding="none" className="overflow-hidden border border-slate-200 rounded-2xl shadow-sm">
               <div className="overflow-x-auto">
-              <table className="w-full text-left min-w-[520px]">
-                <thead>
-                  <tr className="bg-[#0B1521] text-white">
-                    <th className="px-8 py-4 text-[10px] font-black uppercase tracking-[0.2em] opacity-70">Artifact Linkage</th>
-                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] opacity-70 text-center">Score</th>
-                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] opacity-70 text-center">Protocol</th>
-                    <th className="px-8 py-4 text-[10px] font-black uppercase tracking-[0.2em] opacity-70 text-right">Insight</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-brand-navy/5 bg-white">
-                  {matrixRows.map((row) => {
-                    let scoreColor = '#B91C1C';
-                    if (row.alignmentScore >= 80) scoreColor = '#059669';
-                    else if (row.alignmentScore >= 60) scoreColor = '#D4AF37';
-
-                    let statusStyles = { bg: 'rgba(185,28,28,0.08)', text: '#B91C1C' };
-                    if (row.status === 'PASS') statusStyles = { bg: 'rgba(5,150,105,0.08)', text: '#059669' };
-                    else if (row.status === 'WARN') statusStyles = { bg: 'rgba(212,175,55,0.12)', text: '#B45309' };
-
-                    return (
-                      <tr
-                        key={row.id}
-                        onClick={() => setSelectedRow(selectedRow?.id === row.id ? null : row)}
-                        className="group hover:bg-brand-navy/[0.01] transition-colors cursor-pointer"
-                      >
-                        <td className="px-8 py-6">
-                          <div className="flex items-center gap-3">
-                            <span className="text-[13px] font-black text-brand-navy uppercase tracking-tight">{row.upstreamType}</span>
-                            <div className="w-6 h-6 rounded-full bg-brand-navy/5 flex items-center justify-center">
-                              <ChevronRight size={12} className="text-brand-gold opacity-50" />
-                            </div>
-                            <span className="text-[13px] font-black text-brand-navy uppercase tracking-tight">{row.downstreamType}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-6 text-center">
-                          <span className="text-[18px] font-black" style={{ color: scoreColor }}>
-                            {row.alignmentScore.toFixed(0)}%
-                          </span>
-                        </td>
-                        <td className="px-6 py-6 text-center">
-                          <div
-                            className="inline-flex px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest"
-                            style={{ background: statusStyles.bg, color: statusStyles.text }}
-                          >
-                            {row.status}
-                          </div>
-                        </td>
-                        <td className="px-8 py-6 text-right">
-                          <div className="inline-flex items-center gap-2 group-hover:translate-x-1 transition-transform">
-                            <span className="text-[10px] font-black text-brand-navy/50 uppercase tracking-widest group-hover:text-brand-navy/80 transition-colors">Details</span>
-                            <div className="w-8 h-8 rounded-xl bg-brand-navy/5 flex items-center justify-center text-brand-navy/30 group-hover:bg-brand-navy group-hover:text-white transition-all border border-brand-navy/5">
-                              <ChevronRight size={14} />
-                            </div>
-                          </div>
+                <table className="w-full text-left min-w-[480px]">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="px-5 py-3.5 text-sm font-semibold text-slate-700">Documents compared</th>
+                      <th className="px-4 py-3.5 text-sm font-semibold text-slate-700 text-center">Score</th>
+                      <th className="px-5 py-3.5 text-sm font-semibold text-slate-700 text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {matrixRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-500">
+                          No alignment data yet. The team has not completed an audit.
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    ) : (
+                      matrixRows.map((row) => {
+                        const status = linkStatusLabel(row.status);
+                        return (
+                          <tr key={row.id} className="hover:bg-slate-50/80">
+                            <td className="px-5 py-4">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-semibold text-slate-800">{docLabel(row.upstreamType)}</span>
+                                <ChevronRight size={14} className="text-slate-400 shrink-0" />
+                                <span className="text-sm font-semibold text-slate-800">{docLabel(row.downstreamType)}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 text-center">
+                              <span className="text-lg font-bold" style={{ color: scoreColor(row.alignmentScore) }}>
+                                {row.alignmentScore.toFixed(0)}%
+                              </span>
+                            </td>
+                            <td className="px-5 py-4 text-center">
+                              <span className={`inline-flex px-3 py-1 rounded-lg text-sm font-semibold ring-1 ${status.className}`}>
+                                {status.label}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
               </div>
             </Card>
           </section>
 
-          {/* Neural Gaps Section */}
-          <section className="space-y-6">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-2xl bg-brand-gold flex items-center justify-center text-brand-navy shadow-lg -rotate-3 shrink-0">
-                  <AlertCircle size={18} />
+          {/* Issues found */}
+          <section>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700">
+                  <AlertCircle size={20} />
                 </div>
                 <div>
-                  <h3 className="text-[16px] font-black text-brand-navy uppercase tracking-tight">Neural Gap Reports</h3>
-                  <p className="text-[11px] text-brand-navy/60 font-bold uppercase tracking-widest">Discontinuities Identified by AI</p>
+                  <h2 className="text-lg font-bold text-slate-900">Issues found</h2>
+                  <p className="text-sm text-slate-500">Problems detected between project documents</p>
                 </div>
               </div>
 
-              {/* Severity Filter */}
-              <div className="flex flex-wrap items-center gap-1.5 p-1 bg-brand-navy/5 rounded-xl w-full lg:w-auto overflow-x-auto">
-                <div className="px-2 border-r border-brand-navy/10 mr-1 hidden sm:block">
-                  <Filter size={12} className="text-brand-navy/30" />
-                </div>
+              <div className="flex flex-wrap gap-1.5 p-1 bg-slate-100 rounded-xl">
                 {(['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const).map((s) => (
                   <button
                     key={s}
                     type="button"
                     onClick={() => setGapFilter(s)}
-                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
-                      gapFilter === s 
-                        ? 'bg-brand-navy text-white shadow-sm' 
-                        : 'text-brand-navy/40 hover:bg-brand-navy/10'
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                      gapFilter === s
+                        ? 'bg-[#1E3A5F] text-white shadow-sm'
+                        : 'text-slate-600 hover:bg-white'
                     }`}
                   >
-                    {s}
+                    {s === 'ALL' ? 'All' : SEVERITY_LABELS[s]}
                   </button>
                 ))}
               </div>
             </div>
 
             {gaps.length === 0 ? (
-               <div className="py-12 flex flex-col items-center justify-center bg-emerald-50 rounded-3xl border border-emerald-100/50">
-                  <div className="w-16 h-16 rounded-3xl bg-emerald-100 flex items-center justify-center text-emerald-600 mb-4">
-                      <CheckCircle2 size={32} />
-                  </div>
-                  <p className="text-[15px] font-black text-emerald-800 tracking-tight">No Continuity Gaps Detected</p>
-                  <p className="text-[12px] text-emerald-600/60 font-medium">All artifacts are perfectly aligned with the research protocol.</p>
-               </div>
+              <div className="py-12 flex flex-col items-center justify-center bg-emerald-50 rounded-2xl border border-emerald-100">
+                <CheckCircle2 size={40} className="text-emerald-600 mb-3" />
+                <p className="text-base font-semibold text-emerald-900">No issues in this category</p>
+                <p className="text-sm text-emerald-700 mt-1">Try another filter or review all issues.</p>
+              </div>
             ) : (
-                <div className="max-h-[min(580px,50vh)] sm:max-h-[580px] overflow-y-auto pr-1 sm:pr-3 custom-scrollbar">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-12">
-                    {gaps.map((gap) => (
-                      <Card
-                        key={gap.id}
-                        padding="none"
-                        onClick={() => setSelectedGap(selectedGap?.id === gap.id ? null : gap)}
-                        className={`group cursor-pointer transition-all duration-300 border-none ring-1 ${
-                          selectedGap?.id === gap.id
-                            ? 'ring-brand-gold shadow-premium !bg-[#1E3A5F] translate-y-[-4px]'
-                            : 'ring-brand-navy/15 bg-white hover:ring-brand-navy/30'
-                        }`}
-                      >
-                        <div className="p-5 flex gap-4">
-                          <div className={`mt-1 h-fit p-2.5 rounded-xl shrink-0 transition-all ${
-                              selectedGap?.id === gap.id 
-                              ? 'bg-brand-gold text-brand-navy shadow-[0_0_15px_rgba(212,175,55,0.4)]' 
-                              : 'bg-brand-navy/5 text-brand-navy/50 group-hover:text-brand-navy/70 group-hover:bg-brand-navy/10'
-                          }`}>
-                            {severityIcon[gap.severity]}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center justify-between mb-2">
-                              <Badge variant={severityToBadge(gap.severity)} className="text-[9px] uppercase tracking-widest py-0">
-                                  {gap.severity}
-                              </Badge>
-                            </div>
-                            <p className={`text-[12.5px] font-bold leading-relaxed line-clamp-3 transition-colors ${
-                                selectedGap?.id === gap.id ? 'text-white' : 'text-brand-navy/80'
-                            }`}>
-                              {gap.description}
-                            </p>
-                          </div>
+              <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1 custom-scrollbar">
+                {gaps.map((gap) => {
+                  const isSelected = selectedGap?.id === gap.id;
+                  return (
+                    <button
+                      key={gap.id}
+                      type="button"
+                      onClick={() => setSelectedGap(gap)}
+                      className={`w-full text-left p-4 rounded-xl border transition-all ${
+                        isSelected
+                          ? 'border-[#D4AF37] bg-[#1E3A5F] shadow-md ring-2 ring-[#D4AF37]/30'
+                          : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
+                      }`}
+                    >
+                      <div className="flex gap-3">
+                        <div className={`shrink-0 mt-0.5 ${isSelected ? 'text-[#D4AF37]' : ''}`}>
+                          {severityIcon[gap.severity]}
                         </div>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap mb-2">
+                            <Badge
+                              variant={severityToBadge(gap.severity)}
+                              className={isSelected ? '!bg-white/15 !text-white !ring-white/20' : ''}
+                            >
+                              {SEVERITY_LABELS[gap.severity]}
+                            </Badge>
+                            {gap.affectedArtifacts?.slice(0, 2).map((a) => (
+                              <span
+                                key={a}
+                                className={`text-xs font-medium px-2 py-0.5 rounded-md ${
+                                  isSelected ? 'bg-white/10 text-white/90' : 'bg-slate-100 text-slate-600'
+                                }`}
+                              >
+                                {docLabel(a)}
+                              </span>
+                            ))}
+                          </div>
+                          <p className={`text-sm leading-relaxed line-clamp-3 ${isSelected ? 'text-white' : 'text-slate-700'}`}>
+                            {gap.description}
+                          </p>
+                          <p className={`text-xs mt-2 font-medium ${isSelected ? 'text-[#D4AF37]' : 'text-[#1E3A5F]'}`}>
+                            Click to read full details →
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </section>
         </div>
 
-        {/* ── Right Column: Contextual Pane ───────────────────────────── */}
-        <div className="lg:col-span-6 space-y-6">
-          
-          {/* Diagnostic Insight Pane */}
+        {/* Right: issue detail or team info */}
+        <div className="xl:col-span-5">
           <div className="sticky top-6 space-y-6">
             {selectedGap ? (
-                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <Card padding="none" className="overflow-hidden border-none shadow-2xl ring-1 ring-brand-navy/15 !bg-[#0B1521] rounded-[2.5rem]">
-                        <div className="p-8 pb-12 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #0B1521 0%, #162D4A 60%, #1E3A5F 100%)' }}>
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-brand-gold/25 rounded-full blur-[60px] -mr-16 -mt-16" />
-                            <div className="relative z-10 space-y-6">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-2xl bg-brand-gold/20 border border-brand-gold/40 flex items-center justify-center text-brand-gold shadow-lg shadow-brand-gold/15">
-                                            <Sparkles size={20} />
-                                        </div>
-                                        <p className="text-[11px] font-black uppercase tracking-[0.3em] text-brand-gold">Diagnostic Report</p>
-                                    </div>
-                                    <button 
-                                        onClick={() => setSelectedGap(null)} 
-                                        className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all border border-white/10 shadow-lg"
-                                    >
-                                        <X size={18} />
-                                    </button>
-                                </div>
-                                <div className="space-y-4">
-                                    <h4 className="text-[22px] font-black text-white leading-tight tracking-tight drop-shadow-md">
-                                        {gapTypeLabel[selectedGap.affectedArtifacts?.[0] as keyof typeof gapTypeLabel] || 'AI Issue Analysis'}
-                                    </h4>
-                                    <div className="h-1.5 w-16 bg-brand-gold rounded-full shadow-[0_0_15px_rgba(212,175,55,0.6)]" />
-                                    <p className="text-[15.5px] font-bold text-white leading-relaxed italic pr-6 drop-shadow-sm">
-                                        "{selectedGap.description}"
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="p-8 -mt-8 bg-white rounded-t-[3rem] relative z-20 space-y-10 shadow-[0_-15px_50px_rgba(0,0,0,0.15)]">
-                            <div className="space-y-3.5">
-                                <div className="flex items-center gap-2.5">
-                                    <div className="w-6 h-6 rounded-lg bg-brand-coral/10 flex items-center justify-center">
-                                        <Target size={14} className="text-brand-coral" />
-                                    </div>
-                                    <p className="text-[10px] font-black text-brand-navy/70 uppercase tracking-[0.2em]">Causal Analysis</p>
-                                </div>
-                                <div className="p-5 rounded-3xl bg-brand-coral/[0.04] border border-brand-coral/15 hover:border-brand-coral/25 transition-colors">
-                                    <p className="text-[12.5px] font-bold text-brand-navy leading-relaxed">
-                                        {selectedGap.rootCause}
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="space-y-3.5">
-                                <div className="flex items-center gap-2.5">
-                                    <div className="w-6 h-6 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                                        <Lightbulb size={14} className="text-brand-emerald" />
-                                    </div>
-                                    <p className="text-[10px] font-black text-brand-navy/70 uppercase tracking-[0.2em]">Recommendation</p>
-                                </div>
-                                <div className="p-5 rounded-3xl bg-brand-emerald/[0.04] border border-brand-emerald/15 hover:border-brand-emerald/25 transition-colors">
-                                    <p className="text-[12.5px] font-bold text-brand-navy leading-relaxed">
-                                        {selectedGap.recommendation}
-                                    </p>
-                                </div>
-                            </div>
-                            
-                            <div className="pt-6 border-t border-brand-navy/10 flex items-center justify-between">
-                                <div className="space-y-1">
-                                    <p className="text-[9px] font-black text-brand-navy/40 uppercase tracking-widest">AI Confidence</p>
-                                    <div className="flex items-center gap-2">
-                                        <p className="text-[16px] font-black text-brand-navy">{(selectedGap.aiConfidence * 100).toFixed(0)}%</p>
-                                        <div className="w-1.5 h-1.5 rounded-full bg-brand-emerald animate-pulse" />
-                                    </div>
-                                </div>
-                                <div className="text-right space-y-1">
-                                    <p className="text-[9px] font-black text-brand-navy/40 uppercase tracking-widest">Audited At</p>
-                                    <p className="text-[12px] font-bold text-brand-navy/80">{selectedGap.createdAt ? new Date(selectedGap.createdAt).toLocaleDateString(undefined, { month: '2-digit', day: '2-digit', year: 'numeric' }) : '—'}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </Card>
-                </div>
+              <GapDetailPanel gap={selectedGap} onClose={() => setSelectedGap(null)} />
             ) : (
-                <Card className="!bg-[#1E3A5F] p-8 rounded-[2.5rem] border-none shadow-2xl relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-48 h-48 bg-brand-gold/10 rounded-full blur-[80px] -mr-24 -mt-24 transition-transform group-hover:scale-125 duration-700" />
-                    <div className="relative z-10 space-y-8">
-                        <div className="flex items-center gap-4">
-                            <div className="w-14 h-14 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-brand-gold rotate-3 group-hover:rotate-6 transition-all duration-300">
-                                <Users size={28} />
-                            </div>
-                            <div>
-                                <h4 className="text-[18px] font-black text-white tracking-tight leading-none uppercase mb-1.5">Group DNA</h4>
-                                <div className="inline-flex px-2 py-0.5 bg-brand-gold/20 rounded-md">
-                                    <p className="text-[9px] font-black text-brand-gold uppercase tracking-[0.3em]">{group.teamCode}</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="space-y-6">
-                            <div className="p-5 rounded-3xl bg-white/5 border border-white/10 group-hover:border-white/20 transition-colors">
-                                <p className="text-[9px] font-black text-white/50 uppercase tracking-[0.2em] mb-3">Principal Investigator</p>
-                                {group.members.slice(0, 1).map(m => (
-                                    <div key={m.id} className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-xl bg-brand-gold text-brand-navy flex items-center justify-center text-[13px] font-black shadow-lg shadow-brand-gold/20">
-                                            {m.name.charAt(0)}
-                                        </div>
-                                        <div>
-                                            <p className="text-[13px] font-black text-white uppercase tracking-tight leading-none mb-1">{m.name}</p>
-                                            <p className="text-[10px] font-bold text-white/70 truncate max-w-[120px]">{m.email}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-
-                            <div className="space-y-3">
-                                <p className="text-[9px] font-black text-white/60 uppercase tracking-[0.2em] ml-2">Team Personnel</p>
-                                <div className="space-y-2">
-                                    {group.members.slice(1).map((m) => (
-                                        <div key={m.id} className="flex items-center gap-3 p-3 rounded-2xl hover:bg-white/10 transition-colors group/member">
-                                            <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-[10px] font-black text-white/90 group-hover/member:bg-brand-gold group-hover/member:text-brand-navy transition-all">
-                                                {m.name.charAt(0)}
-                                            </div>
-                                            <p className="text-[11px] font-bold text-white/90 group-hover/member:text-white transition-colors uppercase tracking-tight truncate flex-1">{m.name}</p>
-                                            <ChevronRight size={12} className="text-white/40 group-hover/member:text-brand-gold opacity-10 group-hover/member:opacity-100 transition-all" />
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="pt-4 border-t border-white/10">
-                            <p className="text-[9px] font-black text-white/60 uppercase tracking-[0.2em] mb-3">Sync Status</p>
-                            <div className="flex items-center gap-2 text-emerald-400">
-                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400/90">Live Connection</span>
-                            </div>
-                        </div>
-                    </div>
-                </Card>
+              <Card className="p-6 rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-center">
+                <AlertCircle size={32} className="mx-auto text-slate-300 mb-3" />
+                <p className="text-sm font-medium text-slate-600">Select an issue on the left to see details and recommendations.</p>
+              </Card>
             )}
+            <TeamInfoPanel group={group} />
           </div>
         </div>
       </div>
