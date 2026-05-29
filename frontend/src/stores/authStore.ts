@@ -92,12 +92,16 @@ function apiErrorMessage(err: ApiError, fallback: string): string {
 /** In-flight guard: prevents concurrent duplicate initFromSession calls (e.g. React StrictMode). */
 let initInFlight: Promise<void> | null = null;
 
-/** Load the first group for the signed-in user (non-fatal, best-effort). */
+/** Load the first-created group for the signed-in user (non-fatal, best-effort). */
 async function loadUserGroup(setState: StoreSetter): Promise<void> {
   try {
     const groupRes = await api.get('/api/projects');
-    const groups: Array<{ id: string }> = groupRes.data.groups;
-    if (groups.length > 0) setState({ groupId: groups[0].id });
+    const groups: Array<{ id: string; createdAt?: string }> = groupRes.data.groups ?? [];
+    if (groups.length === 0) return;
+    const oldest = [...groups].sort(
+      (a, b) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime(),
+    )[0];
+    if (oldest) setState({ groupId: oldest.id });
   } catch { /* non-fatal */ }
 }
 

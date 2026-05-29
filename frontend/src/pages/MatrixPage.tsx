@@ -195,7 +195,7 @@ export const MatrixPage: React.FC = () => {
     selectedGroup,
     selectGroup,
     isInitialLoad,
-  } = useWorkspacePicker({ preferGroupWithAudit: true });
+  } = useWorkspacePicker();
   const auditQuery = useLatestAudit(selectedGroupId);
   const audit = (auditQuery.data ?? selectedGroup?.auditResults?.[0] ?? null) as ApiAudit | null;
   const loading = isInitialLoad && !audit;

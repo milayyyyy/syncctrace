@@ -201,7 +201,7 @@ export const DiagnosticsPage: React.FC = () => {
     selectedGroup,
     selectGroup,
     isInitialLoad,
-  } = useWorkspacePicker({ preferGroupWithAudit: true });
+  } = useWorkspacePicker();
   const auditQuery = useLatestAudit(selectedGroupId);
 
   const gaps = useMemo(() => {

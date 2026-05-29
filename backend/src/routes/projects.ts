@@ -60,7 +60,7 @@ projectsRouter.get('/', async (req: AuthRequest, res: Response): Promise<void> =
         ? { advisorId: userId }
         : { members: { some: { id: userId } } },
       include: groupInclude,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: 'asc' },
     });
     res.json({ groups });
   } catch (err) {

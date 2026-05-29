@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import {
   useQuery,
   useQueryClient,
@@ -20,7 +20,19 @@ export const queryKeys = {
 
 async function fetchProjects(): Promise<ApiGroup[]> {
   const res = await api.get('/api/projects');
-  return res.data.groups ?? [];
+  const groups: ApiGroup[] = res.data.groups ?? [];
+  return sortWorkspacesByCreated(groups);
+}
+
+/** Oldest workspace first — the user's first created project. */
+export function sortWorkspacesByCreated(workspaces: ApiGroup[]): ApiGroup[] {
+  return [...workspaces].sort(
+    (a, b) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime(),
+  );
+}
+
+export function primaryWorkspaceId(workspaces: ApiGroup[]): string {
+  return sortWorkspacesByCreated(workspaces)[0]?.id ?? '';
 }
 
 async function fetchProject(id: string): Promise<ApiGroup> {
@@ -109,22 +121,27 @@ export function useInvalidateWorkspace() {
   return useCallback((groupId?: string) => invalidateWorkspaceData(qc, groupId), [qc]);
 }
 
-/** Pick active workspace; syncs with auth store groupId. */
-export function useWorkspacePicker(options?: { preferGroupWithAudit?: boolean }) {
+/** Pick active workspace; defaults to the first project created. */
+export function useWorkspacePicker() {
   const { groupId, setGroupId } = useAuthStore();
   const query = useProjects();
-  const workspaces = query.data ?? [];
+  const workspaces = useMemo(
+    () => sortWorkspacesByCreated(query.data ?? []),
+    [query.data],
+  );
+  const defaultGroupId = primaryWorkspaceId(workspaces);
+
+  useEffect(() => {
+    if (!defaultGroupId) return;
+    const active = groupId ? workspaces.some((g) => g.id === groupId) : false;
+    if (!active) setGroupId(defaultGroupId);
+  }, [defaultGroupId, groupId, setGroupId, workspaces]);
 
   const selectedGroupId = useMemo(() => {
     if (workspaces.length === 0) return '';
     const active = groupId ? workspaces.find((g) => g.id === groupId) : undefined;
-    const withAudit = workspaces.find((g) => (g.auditResults?.length ?? 0) > 0);
-    if (options?.preferGroupWithAudit) {
-      const best = active?.auditResults?.length ? active : withAudit ?? active ?? workspaces[0];
-      return best?.id ?? '';
-    }
-    return active?.id ?? workspaces[0]?.id ?? '';
-  }, [workspaces, groupId, options?.preferGroupWithAudit]);
+    return active?.id ?? defaultGroupId;
+  }, [workspaces, groupId, defaultGroupId]);
 
   const selectGroup = useCallback((id: string) => {
     setGroupId(id);
@@ -138,6 +155,7 @@ export function useWorkspacePicker(options?: { preferGroupWithAudit?: boolean })
     selectedGroupId,
     selectedGroup,
     selectGroup,
+    defaultGroupId,
     isInitialLoad: query.isPending && workspaces.length === 0,
   };
 }

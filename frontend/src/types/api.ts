@@ -51,6 +51,7 @@ export interface ApiGroup {
   name: string;
   projectTitle: string;
   teamCode: string;
+  createdAt?: string;
   members: ApiMember[];
   artifacts?: ApiArtifact[];
   auditResults: ApiAudit[];

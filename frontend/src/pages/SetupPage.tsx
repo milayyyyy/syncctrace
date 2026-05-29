@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Hash, AlertCircle, Plus, X,
@@ -10,7 +10,7 @@ import { Button } from '../components/ui/Button';
 import { api } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import type { ArtifactType } from '../types';
-import { useFacultyList, useInvalidateWorkspace, useProjects } from '../hooks/queries';
+import { useFacultyList, useInvalidateWorkspace, useProjects, primaryWorkspaceId } from '../hooks/queries';
 import type { ApiGroup } from '../types/api';
 
 /* ─── artifact checklist order ───────────────────────────── */
@@ -203,7 +203,6 @@ function InitModal({
   readonly onClose: () => void;
   readonly onCreated: (group: ApiGroup) => void;
 }) {
-  const { setGroupId } = useAuthStore();
   const [projectTitle, setProjectTitle] = useState('');
   const [teamCode, setTeamCode]         = useState('');
   const [adviserId, setAdviserId]       = useState('');
@@ -242,7 +241,6 @@ function InitModal({
         adviserId,
         memberEmails: memberEmails.filter((item) => item.value.trim()).map((item) => item.value.trim()),
       });
-      setGroupId(res.data.group.id);
       onCreated(res.data.group as ApiGroup);
     } catch (err: unknown) {
       const axErr = err as { response?: { data?: { error?: string } } };
@@ -465,7 +463,6 @@ function JoinModal({
   readonly onClose: () => void;
   readonly onJoined: (group: ApiGroup) => void;
 }) {
-  const { setGroupId } = useAuthStore();
   const [teamCode, setTeamCode]       = useState('');
   const [projectTitle, setProjectTitle] = useState('');
   const [loading, setLoading]         = useState(false);
@@ -481,7 +478,6 @@ function JoinModal({
         teamCode: teamCode.trim(),
         projectTitle: projectTitle.trim() || undefined,
       });
-      setGroupId(res.data.group.id);
       onJoined(res.data.group as ApiGroup);
     } catch (err: unknown) {
       const axErr = err as { response?: { data?: { error?: string } } };
@@ -584,19 +580,17 @@ export const SetupPage: React.FC = () => {
   const [showJoin, setShowJoin] = useState(false);
   const [showInit, setShowInit] = useState(false);
 
-  useEffect(() => {
-    if (groups.length > 0) setGroupId(groups[0].id);
-  }, [groups, setGroupId]);
-
-  const handleJoined = (group: ApiGroup) => {
-    setGroupId(group.id);
-    invalidateWorkspace(group.id);
+  const handleJoined = async (_group: ApiGroup) => {
+    invalidateWorkspace();
+    const result = await refetch();
+    setGroupId(primaryWorkspaceId(result.data ?? []));
     setShowJoin(false);
   };
 
-  const handleCreated = (group: ApiGroup) => {
-    setGroupId(group.id);
-    invalidateWorkspace(group.id);
+  const handleCreated = async (_group: ApiGroup) => {
+    invalidateWorkspace();
+    const result = await refetch();
+    setGroupId(primaryWorkspaceId(result.data ?? []));
     setShowInit(false);
   };
 
