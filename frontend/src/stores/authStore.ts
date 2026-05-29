@@ -64,6 +64,25 @@ async function exchangeOAuthCodeIfPresent(): Promise<void> {
   }
 }
 
+/** Supabase implicit OAuth returns tokens in the URL hash (#access_token=...). */
+async function recoverSessionFromUrlHash(): Promise<void> {
+  const hash = globalThis.location.hash.replace(/^#/, '');
+  if (!hash.includes('access_token=')) return;
+
+  const params = new URLSearchParams(hash);
+  const access_token = params.get('access_token');
+  const refresh_token = params.get('refresh_token');
+  if (!access_token || !refresh_token) {
+    throw new Error('Incomplete OAuth response from Google.');
+  }
+
+  const { data: { session: existing } } = await supabase.auth.getSession();
+  if (existing) return;
+
+  const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+  if (error) throw error;
+}
+
 function apiErrorMessage(err: ApiError, fallback: string): string {
   const data = err.response?.data;
   if (typeof data?.error === 'string' && data.error.length > 0) return data.error;
@@ -239,6 +258,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     try {
       await exchangeOAuthCodeIfPresent();
+      await recoverSessionFromUrlHash();
     } catch (err: unknown) {
       set({
         isLoading: false,

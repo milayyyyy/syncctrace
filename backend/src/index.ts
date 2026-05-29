@@ -26,6 +26,7 @@ const corsOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'https://synctrace.vercel.app',
+  'https://syncctrace.vercel.app',
 ].filter((o): o is string => Boolean(o));
 
 app.use(cors({
@@ -53,8 +54,7 @@ const authMutationLimiter = rateLimit({
 app.use(generalLimiter);
 app.use(express.json({ limit: '2mb' }));
 
-// Vercel backend routePrefix "/api" strips that segment before Express sees the path.
-const API_PREFIX = process.env.VERCEL ? '' : '/api';
+const API_PREFIX = '/api';
 
 // Routes
 app.use(`${API_PREFIX}/auth`, authRouter);
@@ -65,11 +65,11 @@ app.use(`${API_PREFIX}/export`, exportRouter);
 app.use(`${API_PREFIX}/users`, usersRouter);
 
 // Health check
-app.get('/health', (_req, res) => {
+app.get(`${API_PREFIX}/health`, (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.get('/health/db', async (_req, res) => {
+app.get(`${API_PREFIX}/health/db`, async (_req, res) => {
   try {
     const [databaseInfo] = await prisma.$queryRaw<Array<{ database: string; schema: string }>>`
       SELECT current_database() AS database, current_schema() AS schema
@@ -105,8 +105,10 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
-  console.log(`SyncTrace API running on port ${PORT}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`SyncTrace API running on port ${PORT}`);
+  });
+}
 
 export default app;
