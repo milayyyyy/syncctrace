@@ -31,10 +31,9 @@ function asApiError(err: unknown): ApiError {
   return typeof err === 'object' && err !== null ? err as ApiError : {};
 }
 
-/** OAuth return URL - always use the site the user is on (never a build-time localhost URL). */
+/** OAuth return URL — always use a dedicated callback route (never /login or /signup). */
 function oauthRedirectUrl(role: Role | null = null): string {
-  const path = role ? '/signup' : '/login';
-  const url = new URL(path, globalThis.location.origin);
+  const url = new URL('/auth/callback', globalThis.location.origin);
   if (role) url.searchParams.set('pending_role', role);
   return url.toString();
 }
@@ -44,6 +43,20 @@ function pendingRoleFromOAuthRedirect(): Role | null {
   const role = params.get('pending_role');
   return role === 'STUDENT' || role === 'FACULTY' ? role : null;
 }
+const PKCE_EXCHANGED_KEY = 'synctrace_pkce_exchanged';
+
+function oauthErrorMessage(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  const code = (err as { code?: string })?.code;
+  if (
+    code === 'flow_state_not_found'
+    || /invalid flow state|no valid flow state/i.test(message)
+  ) {
+    return 'Sign-in session expired or was interrupted. Close this tab, return to the login page, and try again in the same browser.';
+  }
+  return message || 'Could not complete Google sign-in.';
+}
+
 async function exchangeOAuthCodeIfPresent(): Promise<void> {
   const params = new URLSearchParams(globalThis.location.search);
   const oauthError = params.get('error');
@@ -56,12 +69,19 @@ async function exchangeOAuthCodeIfPresent(): Promise<void> {
   const { data: { session: existing } } = await supabase.auth.getSession();
   if (existing) return;
 
-  const { error } = await supabase.auth.exchangeCodeForSession(globalThis.location.href);
+  const alreadyExchanged = sessionStorage.getItem(PKCE_EXCHANGED_KEY);
+  if (alreadyExchanged === code) return;
+
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) {
     const { data: { session } } = await supabase.auth.getSession();
-    if (session) return;
+    if (session) {
+      sessionStorage.setItem(PKCE_EXCHANGED_KEY, code);
+      return;
+    }
     throw error;
   }
+  sessionStorage.setItem(PKCE_EXCHANGED_KEY, code);
 }
 
 /** Supabase implicit OAuth returns tokens in the URL hash (#access_token=...). */
@@ -211,7 +231,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: oauthRedirectUrl() },
+      options: {
+        redirectTo: oauthRedirectUrl(),
+        queryParams: { prompt: 'select_account' },
+      },
     });
   },
 
@@ -237,14 +260,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
         await supabase.auth.signInWithOAuth({
           provider: 'google',
-          options: { redirectTo: oauthRedirectUrl(selectedRole) },
+          options: {
+            redirectTo: oauthRedirectUrl(selectedRole),
+            queryParams: { prompt: 'select_account' },
+          },
         });
       }
       return;
     }
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: oauthRedirectUrl(selectedRole) },
+      options: {
+        redirectTo: oauthRedirectUrl(selectedRole),
+        queryParams: { prompt: 'select_account' },
+      },
     });
   },
 
@@ -266,7 +295,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch (err: unknown) {
       set({
         isLoading: false,
-        authError: err instanceof Error ? err.message : 'Could not complete Google sign-in.',
+        authError: oauthErrorMessage(err),
         authRedirectTo: '/login',
       });
       initInFlight = null;
@@ -299,6 +328,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     await supabase.auth.signOut();
+    sessionStorage.removeItem(PKCE_EXCHANGED_KEY);
     initInFlight = null;
     set({ user: null, isAuthenticated: false, selectedRole: 'STUDENT', isLoading: false, groupId: null, authRedirectTo: '/login' });
   },

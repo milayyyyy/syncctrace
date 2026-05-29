@@ -2,15 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
-import { useOAuthReturn } from '../hooks/useOAuthReturn';
 import { AuthPageLayout } from '../components/shared/AuthPageLayout';
 import { GoogleAuthButton } from '../components/shared/GoogleAuthButton';
-import { AuthOAuthSpinner } from '../components/shared/AuthOAuthSpinner';
 
 export const LoginPage: React.FC = () => {
   const { signInWithGoogle, authError, clearAuthError } = useAuthStore();
-  const { oauthProcessing, error, setError } = useOAuthReturn('/login');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -18,11 +16,7 @@ export const LoginPage: React.FC = () => {
       setError(authError);
       clearAuthError();
     }
-  }, [authError, clearAuthError, setError]);
-
-  if (oauthProcessing) {
-    return <AuthOAuthSpinner message="Signing you in…" />;
-  }
+  }, [authError, clearAuthError]);
 
   const handleSignIn = async () => {
     setIsLoading(true);

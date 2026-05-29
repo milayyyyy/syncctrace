@@ -12,6 +12,7 @@
     "prisma:studio": "prisma studio"
   },
   "dependencies": {
+    "@vercel/functions": "^2.0.0",
     "@prisma/client": "^5.14.0",
     "@supabase/supabase-js": "^2.106.1",
     "@types/pdf-parse": "^1.1.5",

@@ -377,8 +377,17 @@ export const ArtifactsPage: React.FC = () => {
     }
   };
 
+  const finishAuditRun = async (gid: string) => {
+    setPipelineStep(PIPELINE_STEPS.length);
+    await new Promise((r) => setTimeout(r, 400));
+    setRunning(false);
+    setGroupId(gid);
+    invalidateWorkspace(gid);
+    navigate('/matrix');
+  };
+
   const waitForCompletedAudit = async (gid: string, startedAt: number): Promise<boolean> => {
-    for (let attempt = 0; attempt < 60; attempt++) {
+    for (let attempt = 0; attempt < 90; attempt++) {
       try {
         const res = await api.get(`/api/audit/${gid}/latest`, { timeout: 15000 });
         const audit = res.data.auditResult as { auditedAt?: string } | null;
@@ -435,20 +444,35 @@ export const ArtifactsPage: React.FC = () => {
     }, 8000); // 8s per step to better match real AI processing time
 
     try {
-      await api.post(`/api/audit/${selectedGroupId}`, undefined, { timeout: 180000 });
-    } catch (err: unknown) {
-      const axiosErr = err as { code?: string; message?: string; response?: { status?: number; data?: { error?: string; details?: string } } };
-      const hasBackendResponse = Boolean(axiosErr.response);
-      if (!hasBackendResponse || axiosErr.code === 'ECONNABORTED') {
+      const res = await api.post(`/api/audit/${selectedGroupId}`, undefined, { timeout: 180000 });
+      if (res.status === 202) {
         const completedLater = await waitForCompletedAudit(selectedGroupId, auditStartedAt);
         clearInterval(stepInterval);
         if (completedLater) {
-          setPipelineStep(PIPELINE_STEPS.length);
-          await new Promise((r) => setTimeout(r, 400));
-          setRunning(false);
-          setGroupId(selectedGroupId);
-          invalidateWorkspace(selectedGroupId);
-          navigate('/matrix');
+          await finishAuditRun(selectedGroupId);
+          return;
+        }
+        setSaveError('Analysis is still running on the server. Open the Audit page in a minute to view results.');
+        setRunning(false);
+        setPipelineStep(-1);
+        return;
+      }
+    } catch (err: unknown) {
+      const axiosErr = err as { code?: string; message?: string; response?: { status?: number; data?: { error?: string; details?: string } } };
+      const status = axiosErr.response?.status;
+      const hasBackendResponse = Boolean(axiosErr.response);
+      const shouldPoll =
+        !hasBackendResponse ||
+        axiosErr.code === 'ECONNABORTED' ||
+        status === 500 ||
+        status === 502 ||
+        status === 504;
+
+      if (shouldPoll) {
+        const completedLater = await waitForCompletedAudit(selectedGroupId, auditStartedAt);
+        clearInterval(stepInterval);
+        if (completedLater) {
+          await finishAuditRun(selectedGroupId);
           return;
         }
         setSaveError('Analysis is still processing on the server. Open the Audit page in a moment to view the result.');
@@ -460,17 +484,11 @@ export const ArtifactsPage: React.FC = () => {
       clearInterval(stepInterval);
       const completedAnyway = await waitForCompletedAudit(selectedGroupId, auditStartedAt);
       if (completedAnyway) {
-        setPipelineStep(PIPELINE_STEPS.length);
-        await new Promise((r) => setTimeout(r, 400));
-        setRunning(false);
-        setGroupId(selectedGroupId);
-        invalidateWorkspace(selectedGroupId);
-        navigate('/matrix');
+        await finishAuditRun(selectedGroupId);
         return;
       }
       const msg = axiosErr.response?.data?.error || 'Analysis failed.';
       const sub = axiosErr.response?.data?.details;
-      const status = axiosErr.response?.status;
       const prefix = status ? `HTTP ${status}: ` : '';
       setSaveError(prefix + msg + (sub ? ` ${sub}` : ''));
       setRunning(false);
@@ -479,13 +497,7 @@ export const ArtifactsPage: React.FC = () => {
     }
 
     clearInterval(stepInterval);
-    setPipelineStep(PIPELINE_STEPS.length); // mark all steps complete
-    invalidateWorkspace(selectedGroupId);
-
-    await new Promise((r) => setTimeout(r, 400));
-    setRunning(false);
-    setGroupId(selectedGroupId);
-    navigate('/matrix');
+    await finishAuditRun(selectedGroupId);
   };
 
   const filledCount = ARTIFACT_FIELDS.filter((f) => urls[f.key].trim() !== '').length;

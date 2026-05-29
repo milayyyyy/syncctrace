@@ -1,36 +1,39 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
+import { cleanOAuthUrl } from '../lib/oauth';
+import { AuthOAuthSpinner } from '../components/shared/AuthOAuthSpinner';
 
+function studentRedirect(groupId: string | null): string {
+  return groupId ? '/dashboard' : '/setup';
+}
+
+/** Single entry point for Google OAuth PKCE callback — avoids double code exchange on /login. */
 export const AuthCallbackPage: React.FC = () => {
   const navigate = useNavigate();
   const { initFromSession } = useAuthStore();
+  const handledRef = useRef(false);
 
   useEffect(() => {
+    if (handledRef.current) return;
+    handledRef.current = true;
+
     initFromSession().then(() => {
       const state = useAuthStore.getState();
+      cleanOAuthUrl('/auth/callback');
+
       if (state.isAuthenticated) {
         if (state.user?.role === 'FACULTY') {
           navigate('/faculty', { replace: true });
-        } else if (state.groupId) {
-          // Existing student with workspaces → dashboard
-          navigate('/dashboard', { replace: true });
         } else {
-          // New student with no workspaces → setup
-          navigate('/setup', { replace: true });
+          navigate(studentRedirect(state.groupId), { replace: true });
         }
-      } else {
-        navigate(state.authRedirectTo || '/login', { replace: true });
+        return;
       }
+
+      navigate(state.authRedirectTo || '/login', { replace: true });
     });
   }, [initFromSession, navigate]);
 
-  return (
-    <div className="h-screen flex items-center justify-center bg-[#0a0f1e]">
-      <div className="flex flex-col items-center gap-4">
-        <div className="w-8 h-8 border-2 border-white/20 border-t-[#F59E0B] rounded-full animate-spin" />
-        <p className="text-white/40 text-sm">Signing you in…</p>
-      </div>
-    </div>
-  );
+  return <AuthOAuthSpinner message="Signing you in…" />;
 };

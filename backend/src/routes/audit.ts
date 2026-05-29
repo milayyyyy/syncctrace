@@ -1,9 +1,135 @@
 import { Router, Response } from 'express';
+import { waitUntil } from '@vercel/functions';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { analyzeTraceability, type TraceabilityAnalysis, type EvidencePair } from '../services/openai';
 import mammoth from 'mammoth';
 import pdfParse from 'pdf-parse';
 import { prisma } from '../lib/prisma';
+
+type ArtifactRow = Awaited<ReturnType<typeof prisma.artifact.findMany>>[number];
+
+interface AnalysisWork {
+  up: ArtifactRow;
+  down: ArtifactRow;
+  reusedData?: TraceabilityAnalysis;
+}
+
+const MAX_AI_ATTEMPTS = 3;
+const RATE_LIMIT_RETRY_DELAY_MS = 30_000;
+const INTER_PAIR_DELAY_MS = 5_000;
+
+async function analyzeWithRetry(
+  up: ArtifactRow,
+  down: ArtifactRow,
+  attempt = 1,
+): Promise<TraceabilityAnalysis> {
+  const call = () => {
+    console.log(`[AI] [Attempt ${attempt}] Starting analysis: ${up.type} ➔ ${down.type} (${up.content!.length + down.content!.length} chars)`);
+    return analyzeTraceability(
+      { id: up.id, type: up.type, content: up.content! },
+      { id: down.id, type: down.type, content: down.content! },
+    );
+  };
+  try {
+    const result = await call();
+    console.log(`[AI] COMPLETED: ${up.type} ➔ ${down.type}`);
+    return result;
+  } catch (err: unknown) {
+    const status = (err as { status?: number }).status;
+    console.error(`[AI] ERROR (${status}) for ${up.type} ➔ ${down.type}:`, err);
+
+    if (status === 429 && attempt < MAX_AI_ATTEMPTS) {
+      console.log(`[AI] Rate limited (429). Waiting 30s before retry ${attempt + 1}/${MAX_AI_ATTEMPTS}...`);
+      await new Promise(r => setTimeout(r, RATE_LIMIT_RETRY_DELAY_MS));
+      return analyzeWithRetry(up, down, attempt + 1);
+    }
+    throw err;
+  }
+}
+
+async function runPairAnalyses(plan: AnalysisWork[]) {
+  const finalResults: Array<AnalysisWork & { analysis: TraceabilityAnalysis }> = [];
+  for (let i = 0; i < plan.length; i++) {
+    const item = plan[i];
+    if (item.reusedData) {
+      finalResults.push({ ...item, analysis: item.reusedData });
+      continue;
+    }
+    const analysis = await analyzeWithRetry(item.up, item.down);
+    finalResults.push({ ...item, analysis });
+    if (i < plan.length - 1) {
+      await new Promise(r => setTimeout(r, INTER_PAIR_DELAY_MS));
+    }
+  }
+  return finalResults;
+}
+
+async function persistAuditResults(groupId: string, finalResults: Array<AnalysisWork & { analysis: TraceabilityAnalysis }>) {
+  const overallScore =
+    finalResults.reduce((sum, r) => sum + r.analysis.alignmentScore, 0) / finalResults.length;
+  let readinessStatus: string;
+  if (overallScore >= 80) readinessStatus = 'READY';
+  else if (overallScore >= 60) readinessStatus = 'NEEDS_REVISION';
+  else readinessStatus = 'CRITICAL_GAPS';
+
+  const auditResult = await prisma.$transaction(async tx => {
+    const audit = await tx.auditResult.create({
+      data: { groupId, overallScore, readinessStatus: readinessStatus as any },
+    });
+
+    for (const { up, down, analysis } of finalResults) {
+      const status = (analysis.status || 'FAIL').toUpperCase() as any;
+
+      await tx.traceabilityLink.create({
+        data: {
+          upstreamId: up.id,
+          downstreamId: down.id,
+          alignmentScore: analysis.alignmentScore,
+          status: ['PASS', 'WARN', 'FAIL'].includes(status) ? status : 'FAIL',
+          evidencePairs: analysis.evidencePairs as any,
+          auditResultId: audit.id,
+        },
+      });
+
+      for (const gap of analysis.gaps) {
+        const validSeverities = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+        const severity = (gap.severity || 'MEDIUM').toUpperCase();
+        const finalSeverity = validSeverities.includes(severity) ? severity : 'MEDIUM';
+
+        await tx.gap.create({
+          data: {
+            auditResultId: audit.id,
+            description: gap.description || 'No description provided',
+            severity: finalSeverity as any,
+            affectedArtifacts: [up.type, down.type],
+            rootCause: gap.rootCause || 'Root cause not determined by AI',
+            recommendation: gap.recommendation || 'No recommendation provided',
+            aiConfidence: typeof gap.aiConfidence === 'number' ? gap.aiConfidence : 0.5,
+          },
+        });
+      }
+    }
+    return tx.auditResult.findUnique({
+      where: { id: audit.id },
+      include: {
+        traceLinks: {
+          include: { upstream: true, downstream: true },
+        },
+        gaps: true,
+      },
+    });
+  });
+
+  if (!auditResult) {
+    throw new Error('Audit result was created but could not be reloaded.');
+  }
+
+  console.log(
+    `[AUDIT] Created auditResult ${auditResult.id} for group ${groupId} with ${auditResult.traceLinks.length} trace links and ${auditResult.gaps.length} gaps`,
+  );
+
+  return auditResult;
+}
 
 export const auditRouter = Router();
 auditRouter.use(authenticate);
@@ -275,11 +401,6 @@ auditRouter.post('/:groupId', async (req: AuthRequest, res: Response): Promise<v
 
     const byType = Object.fromEntries(artifactsWithContent.map(a => [a.type, a]));
 
-    interface AnalysisWork {
-      up: (typeof artifacts)[0];
-      down: (typeof artifacts)[0];
-      reusedData?: TraceabilityAnalysis;
-    }
     const plan: AnalysisWork[] = [];
 
     // Identify which pairs need new analysis vs reuse
@@ -339,121 +460,28 @@ auditRouter.post('/:groupId', async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    // On 429 rate-limit errors, wait 30 seconds before each retry.
-    const MAX_AI_ATTEMPTS = 3;
-    const RATE_LIMIT_RETRY_DELAY_MS = 30_000;
+    const runAuditJob = async () => {
+      const finalResults = await runPairAnalyses(plan);
+      return persistAuditResults(groupId, finalResults);
+    };
 
-    async function analyzeWithRetry(
-      up: (typeof artifacts)[0],
-      down: (typeof artifacts)[0],
-      attempt = 1
-    ): Promise<any> {
-      const call = () => {
-        console.log(`[AI] [Attempt ${attempt}] Starting analysis: ${up.type} ➔ ${down.type} (${up.content!.length + down.content!.length} chars)`);
-        return analyzeTraceability(
-          { id: up.id, type: up.type, content: up.content! },
-          { id: down.id, type: down.type, content: down.content! },
-        );
-      };
-      try {
-        const result = await call();
-        console.log(`[AI] COMPLETED: ${up.type} ➔ ${down.type}`);
-        return result;
-      } catch (err: unknown) {
-        const status = (err as { status?: number }).status;
-        console.error(`[AI] ERROR (${status}) for ${up.type} ➔ ${down.type}:`, err);
-        
-        if (status === 429 && attempt < MAX_AI_ATTEMPTS) {
-          console.log(`[AI] Rate limited (429). Waiting 30s before retry ${attempt + 1}/${MAX_AI_ATTEMPTS}...`);
-          await new Promise(r => setTimeout(r, RATE_LIMIT_RETRY_DELAY_MS));
-          return await analyzeWithRetry(up, down, attempt + 1);
-        }
-        throw err;
-      }
-    }
-
-    // Execute analysis sequentially to stay within OpenRouter free-tier rate limits.
-    // Parallel calls (Promise.all) often trigger 429 errors on free models.
-    const finalResults: Array<(typeof plan)[0] & { analysis: Awaited<ReturnType<typeof analyzeTraceability>> }> = [];
-    for (let i = 0; i < plan.length; i++) {
-      const item = plan[i];
-      if (item.reusedData) {
-        finalResults.push({ ...item, analysis: item.reusedData });
-        continue;
-      }
-      const analysis = await analyzeWithRetry(item.up, item.down);
-      finalResults.push({ ...item, analysis });
-      // 10-second gap between pairs to avoid triggering rate limits on subsequent calls
-      if (i < plan.length - 1) {
-        await new Promise(r => setTimeout(r, 10000));
-      }
-    }
-
-    const overallScore =
-      finalResults.reduce((sum, r) => sum + r.analysis.alignmentScore, 0) / finalResults.length;
-    let readinessStatus: string;
-    if (overallScore >= 80) readinessStatus = 'READY';
-    else if (overallScore >= 60) readinessStatus = 'NEEDS_REVISION';
-    else readinessStatus = 'CRITICAL_GAPS';
-
-    const auditResult = await prisma.$transaction(async tx => {
-      const audit = await tx.auditResult.create({
-        data: { groupId, overallScore, readinessStatus: readinessStatus as any },
+    // Vercel serverless functions time out if the HTTP response waits for all LLM calls.
+    // Return 202 immediately and finish the audit in the background via waitUntil.
+    if (process.env.VERCEL) {
+      waitUntil(
+        runAuditJob().catch(err => {
+          console.error('[AUDIT] Background audit failed:', err);
+        }),
+      );
+      res.status(202).json({
+        status: 'processing',
+        pairs: plan.length,
+        message: 'Audit started. Poll GET /api/audit/:groupId/latest for results.',
       });
-
-      for (const { up, down, analysis } of finalResults) {
-        // Normalize status to uppercase for Prisma enum
-        const status = (analysis.status || 'FAIL').toUpperCase() as any;
-
-        await tx.traceabilityLink.create({
-          data: {
-            upstreamId: up.id,
-            downstreamId: down.id,
-            alignmentScore: analysis.alignmentScore,
-            status: ['PASS', 'WARN', 'FAIL'].includes(status) ? status : 'FAIL',
-            evidencePairs: analysis.evidencePairs as any,
-            auditResultId: audit.id,
-          },
-        });
-
-        for (const gap of analysis.gaps) {
-          // Ensure severity matches Prisma enum (uppercase)
-          const validSeverities = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
-          const severity = (gap.severity || 'MEDIUM').toUpperCase();
-          const finalSeverity = validSeverities.includes(severity) ? severity : 'MEDIUM';
-
-          await tx.gap.create({
-            data: {
-              auditResultId: audit.id,
-              description: gap.description || 'No description provided',
-              severity: finalSeverity as any,
-              affectedArtifacts: [up.type, down.type],
-              rootCause: gap.rootCause || 'Root cause not determined by AI',
-              recommendation: gap.recommendation || 'No recommendation provided',
-              aiConfidence: typeof gap.aiConfidence === 'number' ? gap.aiConfidence : 0.5,
-            },
-          });
-        }
-      }
-      return tx.auditResult.findUnique({
-        where: { id: audit.id },
-        include: {
-          traceLinks: {
-            include: { upstream: true, downstream: true },
-          },
-          gaps: true,
-        },
-      });
-    });
-
-    if (!auditResult) {
-      throw new Error('Audit result was created but could not be reloaded.');
+      return;
     }
 
-    console.log(
-      `[AUDIT] Created auditResult ${auditResult.id} for group ${groupId} with ${auditResult.traceLinks.length} trace links and ${auditResult.gaps.length} gaps`,
-    );
-
+    const auditResult = await runAuditJob();
     res.status(201).json({ auditResult });
   } catch (err) {
     console.error('Audit error:', err);

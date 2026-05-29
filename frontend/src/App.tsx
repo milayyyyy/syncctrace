@@ -56,11 +56,10 @@ function studentRedirect(groupId: string | null) {
   return groupId ? '/dashboard' : '/setup';
 }
 
-function isOAuthReturnPath(pathname: string): boolean {
-  return (
-    (pathname === '/login' || pathname === '/signup' || pathname.startsWith('/auth/callback'))
-    && isOAuthReturn()
-  );
+function redirectLegacyOAuthCallback(pathname: string): string | null {
+  if (pathname !== '/login' && pathname !== '/signup') return null;
+  if (!isOAuthReturn()) return null;
+  return `/auth/callback${globalThis.location.search}${globalThis.location.hash}`;
 }
 
 function AppRoutes() {
@@ -69,13 +68,14 @@ function AppRoutes() {
   usePrefetchAppData();
 
   useEffect(() => {
-    const skipInit =
-      location.pathname.startsWith('/auth/callback')
-      || isOAuthReturnPath(location.pathname);
-    if (!skipInit) {
-      initFromSession();
-    }
+    if (location.pathname.startsWith('/auth/callback')) return;
+    initFromSession();
   }, [location.pathname, location.hash, location.search, initFromSession]);
+
+  const legacyOAuthTarget = redirectLegacyOAuthCallback(location.pathname);
+  if (legacyOAuthTarget) {
+    return <Navigate to={legacyOAuthTarget} replace />;
+  }
 
   return (
     <Routes>
