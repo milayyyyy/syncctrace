@@ -11,13 +11,22 @@ export const LoginPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [oauthProcessing, setOauthProcessing] = useState(
-    () => globalThis.location.hash.includes('access_token') || globalThis.location.hash.includes('error'),
+    () => globalThis.location.hash.includes('access_token')
+      || globalThis.location.hash.includes('error')
+      || globalThis.location.search.includes('code=')
+      || globalThis.location.search.includes('error'),
   );
   const navigate = useNavigate();
 
   useEffect(() => {
     const hash = globalThis.location.hash;
-    if (!hash.includes('access_token') && !hash.includes('error')) return;
+    const search = globalThis.location.search;
+    const isOAuthReturn =
+      hash.includes('access_token')
+      || hash.includes('error')
+      || search.includes('code=')
+      || search.includes('error');
+    if (!isOAuthReturn) return;
 
     setOauthProcessing(true);
     initFromSession().then(() => {

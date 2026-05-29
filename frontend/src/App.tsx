@@ -54,10 +54,15 @@ function studentRedirect(groupId: string | null) {
   return groupId ? '/dashboard' : '/setup';
 }
 
-function isOAuthReturnPath(pathname: string, hash: string): boolean {
+function isOAuthReturnPath(pathname: string, hash: string, search: string): boolean {
   return (
     (pathname === '/login' || pathname === '/signup' || pathname.startsWith('/auth/callback'))
-    && (hash.includes('access_token') || hash.includes('error'))
+    && (
+      hash.includes('access_token')
+      || hash.includes('error')
+      || search.includes('code=')
+      || search.includes('error')
+    )
   );
 }
 
@@ -68,11 +73,11 @@ function AppRoutes() {
   useEffect(() => {
     const skipInit =
       location.pathname.startsWith('/auth/callback')
-      || isOAuthReturnPath(location.pathname, location.hash);
+      || isOAuthReturnPath(location.pathname, location.hash, location.search);
     if (!skipInit) {
       initFromSession();
     }
-  }, [location.pathname, location.hash, initFromSession]);
+  }, [location.pathname, location.hash, location.search, initFromSession]);
 
   return (
     <Routes>

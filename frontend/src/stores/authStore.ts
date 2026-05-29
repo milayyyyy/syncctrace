@@ -53,6 +53,14 @@ function pendingRoleFromOAuthState(): Role | null {
   }
 }
 
+async function exchangeOAuthCodeIfPresent(): Promise<void> {
+  const params = new URLSearchParams(globalThis.location.search);
+  const code = params.get('code');
+  if (!code) return;
+  const { error } = await supabase.auth.exchangeCodeForSession(globalThis.location.href);
+  if (error) throw error;
+}
+
 /** In-flight guard: prevents concurrent duplicate initFromSession calls (e.g. React StrictMode). */
 let initInFlight: Promise<void> | null = null;
 
@@ -202,6 +210,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     let resolve!: () => void;
     initInFlight = new Promise<void>((r) => { resolve = r; });
     set({ isLoading: true });
+
+    try {
+      await exchangeOAuthCodeIfPresent();
+    } catch (err: unknown) {
+      set({
+        isLoading: false,
+        authError: err instanceof Error ? err.message : 'Could not complete Google sign-in.',
+        authRedirectTo: '/login',
+      });
+      initInFlight = null;
+      resolve();
+      return;
+    }
 
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
