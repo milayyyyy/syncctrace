@@ -281,6 +281,27 @@ export const MatrixPage: React.FC = () => {
     ? 'All critical issues resolved — no structural blockers found.'
     : `${criticalTotal} critical and ${warnTotal} high-severity gaps need attention before submission.`;
 
+  const readinessBanner = readiness === 'READY'
+    ? {
+        wrap: 'bg-emerald-50 border-emerald-100',
+        icon: <CheckCircle2 size={20} className="text-emerald-600 shrink-0 mt-0.5" />,
+        title: 'text-emerald-900',
+        sub: 'text-emerald-700/80',
+      }
+    : readiness === 'NEEDS_REVISION'
+      ? {
+          wrap: 'bg-amber-50 border-amber-100',
+          icon: <AlertTriangle size={20} className="text-amber-600 shrink-0 mt-0.5" />,
+          title: 'text-amber-900',
+          sub: 'text-amber-800/80',
+        }
+      : {
+          wrap: 'bg-red-50 border-red-100',
+          icon: <AlertCircle size={20} className="text-red-600 shrink-0 mt-0.5" />,
+          title: 'text-red-900',
+          sub: 'text-red-700/80',
+        };
+
   return (
     <Layout
       title="Traceability Matrix"
@@ -309,12 +330,12 @@ export const MatrixPage: React.FC = () => {
                   </div>
                 ))}
               </div>
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3.5">
+              <div className={`flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 rounded-xl border px-4 py-3.5 ${readinessBanner.wrap}`}>
                 <div className="flex items-start gap-3 min-w-0 flex-1">
-                  <CheckCircle2 size={20} className="text-emerald-600 shrink-0 mt-0.5" />
+                  {readinessBanner.icon}
                   <div>
-                    <p className="text-sm font-black text-emerald-900">{readinessText}</p>
-                    <p className="text-[12px] text-emerald-700/80 mt-0.5">{readinessSub}</p>
+                    <p className={`text-sm font-black ${readinessBanner.title}`}>{readinessText}</p>
+                    <p className={`text-[12px] mt-0.5 ${readinessBanner.sub}`}>{readinessSub}</p>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 shrink-0">
