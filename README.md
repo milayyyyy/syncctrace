@@ -2,7 +2,7 @@
 
 **AI-Powered Academic Traceability Platform**
 
-Automate sequential traceability, continuity verification, and audit reporting for capstone projects. SyncTrace uses advanced NLP and machine learning to ensure comprehensive alignment between project artifacts and detect gaps with AI-powered recommendations.
+Automate sequential traceability, continuity verification, and audit reporting for capstone projects. SyncTrace uses LLM-powered analysis (via OpenRouter) to ensure comprehensive alignment between project artifacts and detect gaps with AI-powered recommendations.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green)](https://nodejs.org)
@@ -45,12 +45,22 @@ syncctrace/
 ### Data Flow
 
 ```
-User → Frontend (React) → Backend API (Express) → Database (PostgreSQL)
+User → Frontend (React) → Backend API (Express) → PostgreSQL (Supabase)
                             ↓
-                        AI Service (Python)
+                     OpenRouter (LLM)
                             ↓
-                    NLP Analysis & Recommendations
+              Traceability analysis & gap recommendations
 ```
+
+Production audits run through **Express + OpenRouter**. The optional `ai-service/` Python microservice provides embedding-based similarity for local or experimental use.
+
+### Deployment
+
+| Component | Vercel project | URL |
+|---|---|---|
+| Frontend | `syncctrace` | [synctrace.vercel.app](https://synctrace.vercel.app) |
+| Backend | `syncctrace-oj9b` | [synctrace-backend.vercel.app](https://synctrace-backend.vercel.app) |
+| Database & Auth | Supabase | PostgreSQL + Google OAuth |
 
 ## ✨ Key Features
 
@@ -58,51 +68,135 @@ User → Frontend (React) → Backend API (Express) → Database (PostgreSQL)
 |---|---|
 | **Traceability Matrix** | NLP-based semantic similarity scoring between artifact pairs (6 types) |
 | **Gap Detection** | Automated identification of missing traceability links with severity levels |
-| **AI Recommendations** | Machine learning-powered root cause analysis and remediation suggestions |
+| **AI Recommendations** | LLM-powered root cause analysis and remediation suggestions (OpenRouter) |
 | **Faculty Dashboard** | Multi-group project oversight with health metrics and filtering |
-| **Real-time Sync** | Live project state updates using WebSocket/polling |
+| **Real-time Sync** | Live project state updates via React Query polling |
 | **Report Generation** | Multi-format exports (PDF, JSON, CSV) with audit trails |
-| **Authentication** | Google OAuth 2.0 with role-based access control (Student/Faculty) |
+| **Authentication** | Google OAuth via Supabase Auth with role-based access (Student/Faculty) |
 | **Artifact Management** | Upload, version, and manage 6 artifact types with metadata |
 
 ## 🛠️ Tech Stack
 
+### Core architecture
+
+| Layer | Technology | Function |
+|---|---|---|
+| **Frontend** | React 19 SPA (Vercel) | Student & faculty UI |
+| **Backend** | Express API (Vercel) | REST API, uploads, audits, exports |
+| **Database** | PostgreSQL via Supabase | Users, groups, artifacts, audit results |
+| **Auth** | Supabase Auth | Google OAuth, sessions, JWT verification |
+| **AI audits** | OpenRouter | LLM traceability analysis & gap detection |
+
 ### Frontend
-- **Framework**: React 19 + TypeScript
-- **Build**: Vite
-- **Styling**: Tailwind CSS v3, class-variance-authority
-- **State**: Zustand
-- **Router**: React Router v7
-- **HTTP**: Axios + TanStack Query
-- **Forms**: React Hook Form
-- **Icons**: Lucide React
-- **Charts**: Recharts
-- **Export**: html2canvas, jsPDF
+
+| Technology | Function |
+|---|---|
+| **React 19 + TypeScript** | UI framework and type-safe components |
+| **Vite** | Dev server and production bundler |
+| **Tailwind CSS v3** | Utility-first styling |
+| **PostCSS + Autoprefixer** | CSS processing for Tailwind |
+| **React Router v7** | Client-side routing |
+| **Zustand** | Global state (auth, user profile, group context) |
+| **TanStack React Query** | Server state, caching, audit polling |
+| **TanStack React Table** | Data tables (matrix, lists) |
+| **Axios** | HTTP client for backend API |
+| **React Hook Form** | Form handling |
+| **Lucide React** | Icons |
+| **Recharts** | Dashboard charts |
+| **date-fns** | Date formatting |
+| **clsx + tailwind-merge + CVA** | Conditional Tailwind class utilities |
+| **jsPDF + jspdf-autotable** | Structured PDF report export |
+| **html2canvas** | UI capture for exports |
+| **@supabase/supabase-js** | Google OAuth and session management |
+| **ESLint + TypeScript ESLint** | Linting |
 
 ### Backend
-- **Runtime**: Node.js (v20+)
-- **Framework**: Express.js
-- **ORM**: Prisma
-- **Database**: PostgreSQL
-- **Authentication**: JWT + Google OAuth
-- **Security**: bcryptjs, Helmet, CORS, Rate Limiting
-- **PDF Processing**: mammoth
-- **API Docs**: Auto-generated from routes
 
-### AI Service
-- **Runtime**: Python 3.11+
-- **Framework**: FastAPI
-- **NLP**: sentence-transformers (all-MiniLM-L6-v2)
-- **Async**: uvicorn
-- **Utilities**: python-dotenv
+| Technology | Function |
+|---|---|
+| **Node.js 20+** | Backend runtime |
+| **Express.js** | REST API server |
+| **TypeScript** | Type-safe backend code |
+| **Prisma ORM** | Database schema, queries, migrations |
+| **PostgreSQL** | Primary data store (hosted on Supabase) |
+| **@supabase/supabase-js** | Verifies user JWTs on protected routes |
+| **OpenAI SDK → OpenRouter** | LLM chat completions for audits |
+| **@vercel/functions** | Background audit jobs via `waitUntil()` on Vercel |
+| **Zod** | Request validation |
+| **Multer** | Artifact file uploads |
+| **pdf-parse** | Text extraction from PDF artifacts |
+| **Mammoth** | Text extraction from Word (`.docx`) artifacts |
+| **Helmet** | Security HTTP headers |
+| **CORS** | Cross-origin access for the frontend |
+| **express-rate-limit** | API rate limiting |
+| **dotenv** | Local environment variables |
+| **uuid** | Unique ID generation |
+
+### OpenRouter (LLM audits)
+
+SyncTrace sends artifact pairs to [OpenRouter](https://openrouter.ai) using the OpenAI-compatible API at `https://openrouter.ai/api/v1`.
+
+| Setting | Value | Function |
+|---|---|---|
+| **`OPENROUTER_API_KEY`** | Required | Authenticates audit requests |
+| **`OPENROUTER_MODELS`** | Optional, comma-separated | Models tried in order; falls back on 429/502/503 |
+| **`OPENROUTER_MODEL`** | Optional, single model | Alias used if `OPENROUTER_MODELS` is not set |
+
+#### Models
+
+| Model ID | When used | Notes |
+|---|---|---|
+| **`deepseek/deepseek-v4-flash:free`** | **Code default** | Used when no model env var is configured |
+| **`openrouter/free`** | **Recommended primary** | OpenRouter free-tier router (see `.env.example`) |
+| **`deepseek/deepseek-v4-flash:free`** | **Recommended fallback** | Second choice in `.env.example` |
+
+Recommended configuration:
+
+```env
+OPENROUTER_MODELS="openrouter/free,deepseek/deepseek-v4-flash:free"
+```
+
+Each audit call sends full upstream and downstream document text and expects structured JSON (`alignmentScore`, `coverageScore`, `evidencePairs`, `gaps`, `summary`) at `temperature: 0.2`.
+
+### AI service (optional)
+
+| Technology | Function |
+|---|---|
+| **Python 3.11+** | Optional standalone microservice |
+| **FastAPI** | Embedding/similarity HTTP API |
+| **sentence-transformers** (`all-MiniLM-L6-v2`) | Semantic embedding generation |
+| **Uvicorn** | ASGI server |
+| **NumPy + Pydantic** | Vector math and request schemas |
+
+> **Note:** Production Vercel deployments use **OpenRouter via Express**, not the Python `ai-service/`.
+
+### DevOps & hosting
+
+| Technology | Function |
+|---|---|
+| **Vercel** | Hosts frontend and backend monorepo |
+| **GitHub** | Source control; pushes trigger deploys |
+| **`vercel.json`** | Routes frontend at `/` and backend at `/api` |
+
+### Feature → stack mapping
+
+| Feature | Primary technologies |
+|---|---|
+| Login / Google OAuth | Supabase Auth, React, Zustand |
+| Upload artifacts | React, Multer, pdf-parse, Mammoth |
+| Traceability audit | Express, OpenRouter, Prisma |
+| Gap analysis UI | React Query, Recharts |
+| Faculty dashboard | React, TanStack Table, Prisma |
+| PDF / CSV / JSON export | jsPDF, jspdf-autotable, custom export service |
+| Role-based access | Supabase JWT → Express middleware → Prisma roles |
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Node.js v20+
-- Python 3.11+
-- PostgreSQL 15+
-- Google OAuth credentials
+- Python 3.11+ (optional — only for `ai-service/`)
+- Supabase project (PostgreSQL + Google OAuth)
+- OpenRouter API key
 
 ### 1️⃣ Clone & Install
 
@@ -126,20 +220,31 @@ pip install -r requirements.txt
 
 Create `.env` files for each service:
 
-**backend/.env**
-```
-DATABASE_URL="postgresql://user:password@localhost:5432/syncctrace"
-JWT_SECRET="your-super-secret-jwt-key"
-GOOGLE_CLIENT_ID="your-google-client-id"
-GOOGLE_CLIENT_SECRET="your-google-client-secret"
-OPENAI_API_KEY="your-openai-key"
-OPENROUTER_API_KEY="your-openrouter-key"
+**backend/.env** (see `backend/.env.example`)
+
+```env
+DATABASE_URL="postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres"
+SUPABASE_URL="https://[PROJECT-REF].supabase.co"
+SUPABASE_ANON_KEY="your-supabase-anon-key"
+PORT=4000
+FRONTEND_URL="http://localhost:5174"
+OPENROUTER_API_KEY="sk-or-v1-..."
+OPENROUTER_MODELS="openrouter/free,deepseek/deepseek-v4-flash:free"
 ```
 
-**ai-service/.env**
+**frontend/.env**
+
+```env
+VITE_API_URL="http://localhost:4000/api"
+VITE_SUPABASE_URL="https://[PROJECT-REF].supabase.co"
+VITE_SUPABASE_ANON_KEY="your-supabase-anon-key"
 ```
-PYTHONUNBUFFERED=1
-MODEL_NAME="all-MiniLM-L6-v2"
+
+**ai-service/.env** (optional)
+
+```env
+BACKEND_URL="http://localhost:4000"
+EMBEDDING_MODEL="all-MiniLM-L6-v2"
 ```
 
 ### 3️⃣ Setup Database
@@ -167,7 +272,7 @@ npm run dev
 # Runs on http://localhost:4000
 ```
 
-**Terminal 3 - AI Service:**
+**Terminal 3 - AI Service (optional):**
 ```bash
 cd ai-service
 source venv/bin/activate
@@ -198,39 +303,52 @@ Open http://localhost:5173 and sign in with Google OAuth:
 
 ### Production Setup
 
-See [VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md) for complete deployment instructions.
+Deploy as a Vercel monorepo using the root `vercel.json`. The frontend and backend are separate Vercel projects connected to the same GitHub repository.
+
+Set environment variables in each Vercel project (see [Environment Variables](#-environment-variables)).
 
 ## 🌐 Deployment
 
 ### Vercel (Recommended)
 
+The repo uses two Vercel projects:
+
+| Project | Root directory | Domain |
+|---|---|---|
+| `syncctrace` | `frontend/` | Frontend SPA |
+| `syncctrace-oj9b` | `backend/` | `/api` routes |
+
 ```bash
 # Install Vercel CLI
 npm i -g vercel
 
-# Deploy monorepo
+# Deploy from project root (or link each subdirectory in Vercel dashboard)
 vercel --prod
-
-# View logs
-vercel logs syncctrace --prod
 ```
 
-Configuration: See [VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md)
+Configuration is defined in `vercel.json`, `frontend/vercel.json`, and `backend/vercel.json`.
 
 ### Environment Variables (Production)
 
-Set in Vercel dashboard → Settings → Environment Variables:
+Set in each Vercel project → **Settings → Environment Variables**:
+
+**Frontend (`syncctrace`)**
 
 ```
-VITE_API_URL=https://your-domain.vercel.app/api
-VITE_SUPABASE_URL=your-supabase-url
-VITE_SUPABASE_ANON_KEY=your-supabase-key
-DATABASE_URL=your-production-database-url
-OPENAI_API_KEY=your-api-key
-OPENROUTER_API_KEY=your-api-key
-JWT_SECRET=your-production-jwt-secret
-GOOGLE_CLIENT_ID=your-google-client-id
-GOOGLE_CLIENT_SECRET=your-google-client-secret
+VITE_API_URL=https://synctrace-backend.vercel.app/api
+VITE_SUPABASE_URL=https://[PROJECT-REF].supabase.co
+VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+```
+
+**Backend (`syncctrace-oj9b`)**
+
+```
+DATABASE_URL=your-supabase-postgres-url
+SUPABASE_URL=https://[PROJECT-REF].supabase.co
+SUPABASE_ANON_KEY=your-supabase-anon-key
+FRONTEND_URL=https://synctrace.vercel.app
+OPENROUTER_API_KEY=sk-or-v1-...
+OPENROUTER_MODELS=openrouter/free,deepseek/deepseek-v4-flash:free
 ```
 
 ## 📂 Project Structure
@@ -278,7 +396,6 @@ syncctrace/
 │
 ├── vercel.json               # Monorepo deployment config
 ├── .vercelignore
-├── VERCEL_DEPLOYMENT.md      # Deployment guide
 └── README.md                 # This file
 ```
 
@@ -288,12 +405,14 @@ syncctrace/
 
 | Variable | Description | Example |
 |---|---|---|
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@localhost/syncctrace` |
-| `JWT_SECRET` | JWT signing secret | `your-super-secret-key` |
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID | From Google Cloud Console |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth secret | From Google Cloud Console |
-| `OPENAI_API_KEY` | OpenAI API key | sk-... |
-| `OPENROUTER_API_KEY` | OpenRouter API key | For LLM routing |
+| `DATABASE_URL` | Supabase PostgreSQL connection string | `postgresql://postgres:...@db....supabase.co:5432/postgres` |
+| `SUPABASE_URL` | Supabase project URL | `https://[PROJECT-REF].supabase.co` |
+| `SUPABASE_ANON_KEY` | Supabase anonymous key | From Supabase dashboard |
+| `FRONTEND_URL` | Frontend origin (OpenRouter referer header) | `https://synctrace.vercel.app` |
+| `OPENROUTER_API_KEY` | OpenRouter API key | `sk-or-v1-...` |
+| `OPENROUTER_MODELS` | Comma-separated LLM models (tried in order) | `openrouter/free,deepseek/deepseek-v4-flash:free` |
+| `OPENROUTER_MODEL` | Single model alias (if `OPENROUTER_MODELS` unset) | `deepseek/deepseek-v4-flash:free` |
+| `PORT` | Local dev server port | `4000` |
 
 ### Frontend
 
@@ -303,12 +422,12 @@ syncctrace/
 | `VITE_SUPABASE_URL` | Supabase project URL | From Supabase dashboard |
 | `VITE_SUPABASE_ANON_KEY` | Supabase anonymous key | From Supabase dashboard |
 
-### AI Service
+### AI Service (optional)
 
 | Variable | Description | Example |
 |---|---|---|
-| `PYTHONUNBUFFERED` | Unbuffered output | `1` |
-| `MODEL_NAME` | HuggingFace model ID | `all-MiniLM-L6-v2` |
+| `BACKEND_URL` | Allowed CORS origin | `http://localhost:4000` |
+| `EMBEDDING_MODEL` | HuggingFace model ID | `all-MiniLM-L6-v2` |
 
 ## 🤝 Contributing
 
