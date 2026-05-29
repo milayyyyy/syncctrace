@@ -1,14 +1,17 @@
 import axios from 'axios';
 import { supabase } from '../lib/supabase';
 
-/** API paths in this app already start with `/api/...`. On Vercel, use same-origin (empty base). */
+/** API paths in this app already start with `/api/...`. */
 function resolveApiBaseUrl(): string {
   const configured = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
   if (configured?.startsWith('http')) {
     // Strip trailing /api so paths like /api/auth/me do not become /api/api/auth/me.
     return configured.replace(/\/api\/?$/, '').replace(/\/$/, '');
   }
-  if (import.meta.env.PROD) return '';
+  if (import.meta.env.PROD) {
+    // Production backend is deployed separately on Vercel.
+    return 'https://synctrace-backend.vercel.app';
+  }
   return 'http://localhost:4000';
 }
 
