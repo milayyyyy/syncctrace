@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -73,9 +73,22 @@ function scoreColor(score: number): string {
   return '#B91C1C';
 }
 
-function GapDetailPanel({ gap, onClose }: { readonly gap: ApiGap; readonly onClose: () => void }) {
+function GapDetailPanel({
+  gap,
+  onClose,
+  embedded = false,
+}: {
+  readonly gap: ApiGap;
+  readonly onClose: () => void;
+  readonly embedded?: boolean;
+}) {
   return (
-    <Card padding="none" className="overflow-hidden border border-slate-200 shadow-lg rounded-2xl bg-white">
+    <Card
+      padding="none"
+      className={`overflow-hidden border border-slate-200 shadow-lg bg-white ${
+        embedded ? 'rounded-b-2xl rounded-t-none border-t-0' : 'rounded-2xl'
+      }`}
+    >
       <div className="px-6 py-5 border-b border-slate-100 bg-slate-50 flex items-start justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-slate-500 mb-1">Issue details</p>
@@ -196,10 +209,20 @@ function TeamInfoPanel({ group }: { readonly group: NonNullable<ReturnType<typeo
 export const GroupDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [selectedGap, setSelectedGap] = useState<ApiGap | null>(null);
+  const [expandedGapId, setExpandedGapId] = useState<string | null>(null);
   const [showExport, setShowExport] = useState(false);
   const [gapFilter, setGapFilter] = useState<Severity | 'ALL'>('ALL');
   const { data: group, isPending: loading } = useProject(id);
+
+  const openGapDetails = useCallback((gap: ApiGap) => {
+    setExpandedGapId(gap.id);
+    requestAnimationFrame(() => {
+      document.getElementById(`issue-detail-${gap.id}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+    });
+  }, []);
 
   const latestAudit = group?.auditResults[0];
   const severityOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
@@ -207,17 +230,6 @@ export const GroupDetailPage: React.FC = () => {
     (a, b) => (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99),
   );
   const gaps = allGaps.filter((g) => gapFilter === 'ALL' || g.severity === gapFilter);
-
-  useEffect(() => {
-    if (gaps.length === 0) {
-      setSelectedGap(null);
-      return;
-    }
-    const stillVisible = selectedGap && gaps.some((g) => g.id === selectedGap.id);
-    if (!stillVisible) {
-      setSelectedGap(gaps[0]);
-    }
-  }, [gaps, selectedGap]);
 
   if (loading) {
     return (
@@ -404,7 +416,10 @@ export const GroupDetailPage: React.FC = () => {
                   <button
                     key={s}
                     type="button"
-                    onClick={() => setGapFilter(s)}
+                    onClick={() => {
+                      setGapFilter(s);
+                      setExpandedGapId(null);
+                    }}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                       gapFilter === s
                         ? 'bg-[#1E3A5F] text-white shadow-sm'
@@ -424,52 +439,79 @@ export const GroupDetailPage: React.FC = () => {
                 <p className="text-sm text-emerald-700 mt-1">Try another filter or review all issues.</p>
               </div>
             ) : (
-              <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1 custom-scrollbar">
+              <div className="space-y-3 max-h-none xl:max-h-[520px] xl:overflow-y-auto pr-1 custom-scrollbar">
                 {gaps.map((gap) => {
-                  const isSelected = selectedGap?.id === gap.id;
+                  const isExpanded = expandedGapId === gap.id;
                   return (
-                    <button
-                      key={gap.id}
-                      type="button"
-                      onClick={() => setSelectedGap(gap)}
-                      className={`w-full text-left p-4 rounded-xl border transition-all ${
-                        isSelected
-                          ? 'border-[#D4AF37] bg-[#1E3A5F] shadow-md ring-2 ring-[#D4AF37]/30'
-                          : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
-                      }`}
-                    >
-                      <div className="flex gap-3">
-                        <div className={`shrink-0 mt-0.5 ${isSelected ? 'text-[#D4AF37]' : ''}`}>
-                          {severityIcon[gap.severity]}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap mb-2">
-                            <Badge
-                              variant={severityToBadge(gap.severity)}
-                              className={isSelected ? '!bg-white/15 !text-white !ring-white/20' : ''}
-                            >
-                              {SEVERITY_LABELS[gap.severity]}
-                            </Badge>
-                            {gap.affectedArtifacts?.slice(0, 2).map((a) => (
-                              <span
-                                key={a}
-                                className={`text-xs font-medium px-2 py-0.5 rounded-md ${
-                                  isSelected ? 'bg-white/10 text-white/90' : 'bg-slate-100 text-slate-600'
-                                }`}
-                              >
-                                {docLabel(a)}
-                              </span>
-                            ))}
+                    <div key={gap.id} className="space-y-0">
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => !isExpanded && openGapDetails(gap)}
+                        onKeyDown={(e) => {
+                          if (!isExpanded && (e.key === 'Enter' || e.key === ' ')) {
+                            e.preventDefault();
+                            openGapDetails(gap);
+                          }
+                        }}
+                        className={`w-full text-left p-4 rounded-xl border transition-all cursor-pointer ${
+                          isExpanded
+                            ? 'border-[#D4AF37] bg-[#1E3A5F] shadow-md ring-2 ring-[#D4AF37]/30 rounded-b-none'
+                            : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
+                        }`}
+                      >
+                        <div className="flex gap-3">
+                          <div className={`shrink-0 mt-0.5 ${isExpanded ? 'text-[#D4AF37]' : ''}`}>
+                            {severityIcon[gap.severity]}
                           </div>
-                          <p className={`text-sm leading-relaxed line-clamp-3 ${isSelected ? 'text-white' : 'text-slate-700'}`}>
-                            {gap.description}
-                          </p>
-                          <p className={`text-xs mt-2 font-medium ${isSelected ? 'text-[#D4AF37]' : 'text-[#1E3A5F]'}`}>
-                            Click to read full details →
-                          </p>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap mb-2">
+                              <Badge
+                                variant={severityToBadge(gap.severity)}
+                                className={isExpanded ? '!bg-white/15 !text-white !ring-white/20' : ''}
+                              >
+                                {SEVERITY_LABELS[gap.severity]}
+                              </Badge>
+                              {gap.affectedArtifacts?.slice(0, 2).map((a) => (
+                                <span
+                                  key={a}
+                                  className={`text-xs font-medium px-2 py-0.5 rounded-md ${
+                                    isExpanded ? 'bg-white/10 text-white/90' : 'bg-slate-100 text-slate-600'
+                                  }`}
+                                >
+                                  {docLabel(a)}
+                                </span>
+                              ))}
+                            </div>
+                            <p className={`text-sm leading-relaxed ${isExpanded ? 'text-white' : 'text-slate-700 line-clamp-3'}`}>
+                              {gap.description}
+                            </p>
+                            {!isExpanded && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openGapDetails(gap);
+                                }}
+                                className="text-sm mt-3 font-semibold text-[#1E3A5F] hover:text-[#B45309] underline underline-offset-2 transition-colors"
+                              >
+                                View full details →
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </button>
+
+                      {isExpanded && (
+                        <div id={`issue-detail-${gap.id}`} className="-mt-px">
+                          <GapDetailPanel
+                            gap={gap}
+                            onClose={() => setExpandedGapId(null)}
+                            embedded
+                          />
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -477,17 +519,9 @@ export const GroupDetailPage: React.FC = () => {
           </section>
         </div>
 
-        {/* Right: issue detail or team info */}
+        {/* Right: team info */}
         <div className="xl:col-span-5">
-          <div className="sticky top-6 space-y-6">
-            {selectedGap ? (
-              <GapDetailPanel gap={selectedGap} onClose={() => setSelectedGap(null)} />
-            ) : (
-              <Card className="p-6 rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-center">
-                <AlertCircle size={32} className="mx-auto text-slate-300 mb-3" />
-                <p className="text-sm font-medium text-slate-600">Select an issue on the left to see details and recommendations.</p>
-              </Card>
-            )}
+          <div className="sticky top-6">
             <TeamInfoPanel group={group} />
           </div>
         </div>
