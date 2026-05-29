@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -199,7 +199,15 @@ export const GroupDetailPage: React.FC = () => {
   const [selectedGap, setSelectedGap] = useState<ApiGap | null>(null);
   const [showExport, setShowExport] = useState(false);
   const [gapFilter, setGapFilter] = useState<Severity | 'ALL'>('ALL');
+  const detailPanelRef = useRef<HTMLDivElement>(null);
   const { data: group, isPending: loading } = useProject(id);
+
+  const selectGap = useCallback((gap: ApiGap) => {
+    setSelectedGap(gap);
+    requestAnimationFrame(() => {
+      detailPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }, []);
 
   const latestAudit = group?.auditResults[0];
   const severityOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
@@ -207,17 +215,6 @@ export const GroupDetailPage: React.FC = () => {
     (a, b) => (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99),
   );
   const gaps = allGaps.filter((g) => gapFilter === 'ALL' || g.severity === gapFilter);
-
-  useEffect(() => {
-    if (gaps.length === 0) {
-      setSelectedGap(null);
-      return;
-    }
-    const stillVisible = selectedGap && gaps.some((g) => g.id === selectedGap.id);
-    if (!stillVisible) {
-      setSelectedGap(gaps[0]);
-    }
-  }, [gaps, selectedGap]);
 
   if (loading) {
     return (
@@ -404,7 +401,12 @@ export const GroupDetailPage: React.FC = () => {
                   <button
                     key={s}
                     type="button"
-                    onClick={() => setGapFilter(s)}
+                    onClick={() => {
+                      setGapFilter(s);
+                      if (selectedGap && s !== 'ALL' && selectedGap.severity !== s) {
+                        setSelectedGap(null);
+                      }
+                    }}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                       gapFilter === s
                         ? 'bg-[#1E3A5F] text-white shadow-sm'
@@ -431,7 +433,7 @@ export const GroupDetailPage: React.FC = () => {
                     <button
                       key={gap.id}
                       type="button"
-                      onClick={() => setSelectedGap(gap)}
+                      onClick={() => selectGap(gap)}
                       className={`w-full text-left p-4 rounded-xl border transition-all ${
                         isSelected
                           ? 'border-[#D4AF37] bg-[#1E3A5F] shadow-md ring-2 ring-[#D4AF37]/30'
@@ -461,11 +463,8 @@ export const GroupDetailPage: React.FC = () => {
                               </span>
                             ))}
                           </div>
-                          <p className={`text-sm leading-relaxed line-clamp-3 ${isSelected ? 'text-white' : 'text-slate-700'}`}>
+                          <p className={`text-sm leading-relaxed line-clamp-4 ${isSelected ? 'text-white' : 'text-slate-700'}`}>
                             {gap.description}
-                          </p>
-                          <p className={`text-xs mt-2 font-medium ${isSelected ? 'text-[#D4AF37]' : 'text-[#1E3A5F]'}`}>
-                            Click to read full details →
                           </p>
                         </div>
                       </div>
@@ -478,14 +477,14 @@ export const GroupDetailPage: React.FC = () => {
         </div>
 
         {/* Right: issue detail or team info */}
-        <div className="xl:col-span-5">
+        <div className="xl:col-span-5" ref={detailPanelRef}>
           <div className="sticky top-6 space-y-6">
             {selectedGap ? (
               <GapDetailPanel gap={selectedGap} onClose={() => setSelectedGap(null)} />
             ) : (
               <Card className="p-6 rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-center">
                 <AlertCircle size={32} className="mx-auto text-slate-300 mb-3" />
-                <p className="text-sm font-medium text-slate-600">Select an issue on the left to see details and recommendations.</p>
+                <p className="text-sm font-medium text-slate-600">Click an issue above to view the full analysis and recommended fix.</p>
               </Card>
             )}
             <TeamInfoPanel group={group} />
