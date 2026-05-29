@@ -31,28 +31,18 @@ function asApiError(err: unknown): ApiError {
   return typeof err === 'object' && err !== null ? err as ApiError : {};
 }
 
-/** OAuth return URL — always use the site the user is on (never a build-time localhost URL). */
-function oauthRedirectUrl(): string {
-  return `${globalThis.location.origin}/login`;
+/** OAuth return URL - always use the site the user is on (never a build-time localhost URL). */
+function oauthRedirectUrl(role: Role | null = null): string {
+  const url = new URL('/login', globalThis.location.origin);
+  if (role) url.searchParams.set('pending_role', role);
+  return url.toString();
 }
 
-function oauthState(role: Role | null): string {
-  return btoa(JSON.stringify({ role, nonce: crypto.randomUUID() }));
-}
-
-function pendingRoleFromOAuthState(): Role | null {
+function pendingRoleFromOAuthRedirect(): Role | null {
   const params = new URLSearchParams(globalThis.location.search);
-  const hashParams = new URLSearchParams(globalThis.location.hash.replace(/^#/, ''));
-  const encoded = params.get('state') ?? hashParams.get('state');
-  if (!encoded) return null;
-  try {
-    const payload = JSON.parse(atob(decodeURIComponent(encoded))) as { role?: Role | null };
-    return payload.role === 'STUDENT' || payload.role === 'FACULTY' ? payload.role : null;
-  } catch {
-    return null;
-  }
+  const role = params.get('pending_role');
+  return role === 'STUDENT' || role === 'FACULTY' ? role : null;
 }
-
 async function exchangeOAuthCodeIfPresent(): Promise<void> {
   const params = new URLSearchParams(globalThis.location.search);
   const code = params.get('code');
@@ -153,10 +143,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo: oauthRedirectUrl(),
-        queryParams: { state: oauthState(null) },
-      },
+      options: { redirectTo: oauthRedirectUrl() },
     });
   },
 
@@ -182,20 +169,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
         await supabase.auth.signInWithOAuth({
           provider: 'google',
-          options: {
-            redirectTo: oauthRedirectUrl(),
-            queryParams: { state: oauthState(selectedRole) },
-          },
+          options: { redirectTo: oauthRedirectUrl(selectedRole) },
         });
       }
       return;
     }
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo: oauthRedirectUrl(),
-        queryParams: { state: oauthState(selectedRole) },
-      },
+      options: { redirectTo: oauthRedirectUrl(selectedRole) },
     });
   },
 
@@ -231,7 +212,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       resolve();
       return;
     }
-    const pendingRole = pendingRoleFromOAuthState();
+    const pendingRole = pendingRoleFromOAuthRedirect();
 
     try {
       const res = await fetchUserProfile(session, pendingRole);
