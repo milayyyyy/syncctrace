@@ -4,8 +4,10 @@ import { supabase } from '../lib/supabase';
 /** API paths in this app already start with `/api/...`. On Vercel, use same-origin (empty base). */
 function resolveApiBaseUrl(): string {
   const configured = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
-  if (configured?.startsWith('http')) return configured.replace(/\/$/, '');
-  // "/api" was wrong here — it produced /api/api/projects. Use same-origin instead.
+  if (configured?.startsWith('http')) {
+    // Strip trailing /api so paths like /api/auth/me do not become /api/api/auth/me.
+    return configured.replace(/\/api\/?$/, '').replace(/\/$/, '');
+  }
   if (import.meta.env.PROD) return '';
   return 'http://localhost:4000';
 }

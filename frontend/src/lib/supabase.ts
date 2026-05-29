@@ -9,8 +9,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    detectSessionInUrl: true,
+    // PKCE exchange is handled explicitly in authStore.initFromSession to avoid
+    // racing with detectSessionInUrl (which causes "code already redeemed" errors).
+    detectSessionInUrl: false,
     persistSession: true,
     autoRefreshToken: true,
+    flowType: 'pkce',
   },
 });

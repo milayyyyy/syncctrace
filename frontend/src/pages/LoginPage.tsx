@@ -2,60 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
+import { useOAuthReturn } from '../hooks/useOAuthReturn';
 import { AuthPageLayout } from '../components/shared/AuthPageLayout';
 import { GoogleAuthButton } from '../components/shared/GoogleAuthButton';
 import { AuthOAuthSpinner } from '../components/shared/AuthOAuthSpinner';
 
 export const LoginPage: React.FC = () => {
-  const { signInWithGoogle, authError, clearAuthError, initFromSession } = useAuthStore();
+  const { signInWithGoogle, authError, clearAuthError } = useAuthStore();
+  const { oauthProcessing, error, setError } = useOAuthReturn('/login');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [oauthProcessing, setOauthProcessing] = useState(
-    () => globalThis.location.hash.includes('access_token')
-      || globalThis.location.hash.includes('error')
-      || globalThis.location.search.includes('code=')
-      || globalThis.location.search.includes('error'),
-  );
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const hash = globalThis.location.hash;
-    const search = globalThis.location.search;
-    const isOAuthReturn =
-      hash.includes('access_token')
-      || hash.includes('error')
-      || search.includes('code=')
-      || search.includes('error');
-    if (!isOAuthReturn) return;
-
-    setOauthProcessing(true);
-    initFromSession().then(() => {
-      const state = useAuthStore.getState();
-      globalThis.history.replaceState(null, '', '/login');
-      if (state.isAuthenticated) {
-        if (state.user?.role === 'FACULTY') {
-          navigate('/faculty', { replace: true });
-        } else if (state.groupId) {
-          navigate('/dashboard', { replace: true });
-        } else {
-          navigate('/setup', { replace: true });
-        }
-      } else {
-        setOauthProcessing(false);
-        if (state.authError) {
-          setError(state.authError);
-          clearAuthError();
-        }
-      }
-    });
-  }, [initFromSession, navigate, clearAuthError]);
 
   useEffect(() => {
     if (authError) {
       setError(authError);
       clearAuthError();
     }
-  }, [authError, clearAuthError]);
+  }, [authError, clearAuthError, setError]);
 
   if (oauthProcessing) {
     return <AuthOAuthSpinner message="Signing you in…" />;

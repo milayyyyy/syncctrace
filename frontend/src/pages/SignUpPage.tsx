@@ -2,14 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
+import { useOAuthReturn } from '../hooks/useOAuthReturn';
 import { AuthPageLayout } from '../components/shared/AuthPageLayout';
 import { RoleSelector } from '../components/shared/RoleSelector';
 import { GoogleAuthButton } from '../components/shared/GoogleAuthButton';
+import { AuthOAuthSpinner } from '../components/shared/AuthOAuthSpinner';
 
 export const SignUpPage: React.FC = () => {
   const { selectedRole, setSelectedRole, signUpWithGoogle, authError, clearAuthError } = useAuthStore();
+  const { oauthProcessing, error, setError } = useOAuthReturn('/signup');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -17,7 +19,11 @@ export const SignUpPage: React.FC = () => {
       setError(authError);
       clearAuthError();
     }
-  }, [authError, clearAuthError]);
+  }, [authError, clearAuthError, setError]);
+
+  if (oauthProcessing) {
+    return <AuthOAuthSpinner message="Creating your account…" />;
+  }
 
   const handleSignUp = async () => {
     setIsLoading(true);

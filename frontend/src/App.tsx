@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
+import { isOAuthReturn } from './lib/oauth';
 import { useAuthStore } from './stores/authStore';
 import { LoginPage } from './pages/LoginPage';
 import { SignUpPage } from './pages/SignUpPage';
@@ -54,15 +55,10 @@ function studentRedirect(groupId: string | null) {
   return groupId ? '/dashboard' : '/setup';
 }
 
-function isOAuthReturnPath(pathname: string, hash: string, search: string): boolean {
+function isOAuthReturnPath(pathname: string): boolean {
   return (
     (pathname === '/login' || pathname === '/signup' || pathname.startsWith('/auth/callback'))
-    && (
-      hash.includes('access_token')
-      || hash.includes('error')
-      || search.includes('code=')
-      || search.includes('error')
-    )
+    && isOAuthReturn()
   );
 }
 
@@ -73,7 +69,7 @@ function AppRoutes() {
   useEffect(() => {
     const skipInit =
       location.pathname.startsWith('/auth/callback')
-      || isOAuthReturnPath(location.pathname, location.hash, location.search);
+      || isOAuthReturnPath(location.pathname);
     if (!skipInit) {
       initFromSession();
     }

@@ -33,7 +33,8 @@ function asApiError(err: unknown): ApiError {
 
 /** OAuth return URL - always use the site the user is on (never a build-time localhost URL). */
 function oauthRedirectUrl(role: Role | null = null): string {
-  const url = new URL('/login', globalThis.location.origin);
+  const path = role ? '/signup' : '/login';
+  const url = new URL(path, globalThis.location.origin);
   if (role) url.searchParams.set('pending_role', role);
   return url.toString();
 }
@@ -45,10 +46,28 @@ function pendingRoleFromOAuthRedirect(): Role | null {
 }
 async function exchangeOAuthCodeIfPresent(): Promise<void> {
   const params = new URLSearchParams(globalThis.location.search);
+  const oauthError = params.get('error');
+  if (oauthError) {
+    throw new Error(params.get('error_description') ?? oauthError);
+  }
   const code = params.get('code');
   if (!code) return;
+
+  const { data: { session: existing } } = await supabase.auth.getSession();
+  if (existing) return;
+
   const { error } = await supabase.auth.exchangeCodeForSession(globalThis.location.href);
-  if (error) throw error;
+  if (error) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) return;
+    throw error;
+  }
+}
+
+function apiErrorMessage(err: ApiError, fallback: string): string {
+  const data = err.response?.data;
+  if (typeof data?.error === 'string' && data.error.length > 0) return data.error;
+  return fallback;
 }
 
 /** In-flight guard: prevents concurrent duplicate initFromSession calls (e.g. React StrictMode). */
@@ -104,9 +123,30 @@ async function handleInitError(err: unknown, pendingRole: Role | null, setState:
     setState({ isLoading: false, authError: `Account already registered as ${label}. Please sign in instead.`, authRedirectTo: '/login' });
     return true;
   }
+  if (status === 401) {
+    await supabase.auth.signOut();
+    setState({
+      isLoading: false,
+      authError: 'Your session expired. Please sign in again.',
+      authRedirectTo: '/login',
+    });
+    return true;
+  }
+  if (status === 500 || status === 503) {
+    setState({
+      isLoading: false,
+      authError: apiErrorMessage(apiErr, 'Server error during sign-in. Please try again.'),
+      authRedirectTo: '/login',
+    });
+    return true;
+  }
   if (pendingRole) await supabase.auth.signOut();
-  setState({ isLoading: false, authRedirectTo: '/login' });
-  return false;
+  setState({
+    isLoading: false,
+    authError: apiErrorMessage(apiErr, 'Sign-in failed. Please try again.'),
+    authRedirectTo: '/login',
+  });
+  return true;
 }
 
 
@@ -133,10 +173,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ user, isAuthenticated: true, isLoading: false, authError: null, authRedirectTo: '/login' });
         await loadUserGroup(set);
       } catch (err: unknown) {
-        if (isMissingUserError(asApiError(err))) {
-          set({ authRedirectTo: '/signup' });
+        const apiErr = asApiError(err);
+        if (isMissingUserError(apiErr)) {
+          await supabase.auth.signOut();
+          set({ authRedirectTo: '/signup', authError: 'No account found. Please sign up first.' });
+        } else if (apiErr.response?.status === 401) {
+          await supabase.auth.signOut();
+          set({ authError: 'Your session expired. Please sign in again.' });
         } else {
-          set({ authError: 'Sign-in failed. Please try again.' });
+          set({ authError: apiErrorMessage(apiErr, 'Sign-in failed. Please try again.') });
         }
       }
       return;
