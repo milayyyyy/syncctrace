@@ -12,20 +12,20 @@ import {
   Info,
   Layers,
   Search,
-  X,
   XCircle,
 } from 'lucide-react';
-import type { MatrixRow, TraceEvidence } from '../types';
 import { Layout } from '../components/shared/Layout';
 import { ExportModal } from '../components/shared/ExportModal';
 import { Button } from '../components/ui/Button';
 import { useNavigate } from 'react-router-dom';
 import { useLatestAudit, useWorkspacePicker } from '../hooks/queries';
-import type { ApiAudit, ApiTraceLink } from '../types/api';
+import type { ApiAudit, ApiGap, ApiTraceLink } from '../types/api';
 import { toExportAudit } from '../services/export';
 import {
   buildChainMatrixRows,
   filterChainRows,
+  rowGapSummary,
+  rowMetrics,
   type ChainMatrixRow,
   type DisplayStatus,
 } from '../lib/traceabilityMatrix';
@@ -133,77 +133,55 @@ function ImplementationCellView({ cell }: { readonly cell: ChainMatrixRow['imple
   return <span className="text-[12px] text-slate-400 italic">{cell.label}</span>;
 }
 
-function getSimTextColor(pct: number): string {
-  if (pct >= 70) return 'text-brand-emerald';
-  if (pct >= 40) return 'text-brand-gold';
-  return 'text-brand-coral';
+function ExpandedStatusResult({ status }: { readonly status: DisplayStatus }) {
+  if (status === 'ALIGNED') {
+    return <span className="inline-flex items-center gap-2 text-white"><CheckCircle2 size={15} className="text-emerald-400" /> Aligned</span>;
+  }
+  if (status === 'PARTIAL') {
+    return <span className="inline-flex items-center gap-2 text-white"><Info size={15} className="text-blue-400" /> Partial</span>;
+  }
+  if (status === 'WARNING') {
+    return <span className="inline-flex items-center gap-2 text-white"><AlertTriangle size={15} className="text-amber-400" /> Warning</span>;
+  }
+  return <span className="inline-flex items-center gap-2 text-white"><XCircle size={15} className="text-red-400" /> Missing</span>;
 }
 
-function getSimilarityColor(pct: number): string {
-  if (pct >= 70) return 'bg-brand-emerald';
-  if (pct >= 40) return 'bg-brand-gold';
-  return 'bg-brand-coral';
-}
+function RowExpandedPanel({ row, gaps }: { readonly row: ChainMatrixRow; readonly gaps: ApiGap[] }) {
+  const { alignment, coverage } = rowMetrics(row);
+  const gapText = rowGapSummary(row, gaps);
 
-interface EvidenceModalProps { readonly row: MatrixRow; readonly onClose: () => void; }
-
-function EvidenceModal({ row, onClose }: EvidenceModalProps) {
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
-
-  const weakCount = row.traceEvidence.filter((ev) => Math.round(ev.similarityScore * 100) < 40).length;
-  const avgSim = row.traceEvidence.length > 0
-    ? Math.round(row.traceEvidence.reduce((sum, ev) => sum + ev.similarityScore, 0) / row.traceEvidence.length * 100)
-    : 0;
+  const metrics: Array<{ label: string; result: React.ReactNode }> = [
+    { label: 'Status', result: <ExpandedStatusResult status={row.displayStatus} /> },
+    { label: 'Alignment', result: <span className="text-white font-semibold">{alignment}%</span> },
+    { label: 'Coverage', result: <span className="text-white font-semibold">{coverage}%</span> },
+    { label: 'Gaps', result: <span className="text-white/90 leading-relaxed">{gapText}</span> },
+  ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
-      <dialog className="relative w-full max-w-3xl flex flex-col max-h-[88vh] rounded-2xl overflow-hidden shadow-2xl bg-white p-0 m-auto" open aria-modal="true">
-        <div className="px-6 py-5 border-b border-slate-100 flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Trace Evidence</p>
-            <h3 className="text-lg font-black text-[#1E3A5F]">{row.upstreamType} → {row.downstreamType}</h3>
-            <p className="text-[12px] text-slate-500 mt-1">{row.traceEvidence.length} evidence pairs</p>
-          </div>
-          <button type="button" onClick={onClose} className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500" aria-label="Close">
-            <X size={16} />
-          </button>
-        </div>
-        <div className="overflow-y-auto flex-1 p-5 space-y-3 bg-slate-50">
-          {row.traceEvidence.map((ev: TraceEvidence, i: number) => {
-            const pct = Math.round(ev.similarityScore * 100);
-            return (
-              <div key={`${ev.upstreamSection}-${i}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Match #{i + 1}</span>
-                  <span className={`text-sm font-black ${getSimTextColor(pct)}`}>{pct}%</span>
-                </div>
-                <div className="grid sm:grid-cols-2 gap-3 text-[12px] text-slate-700 leading-relaxed">
-                  <div><p className="text-[9px] font-black text-blue-600 uppercase mb-1">Upstream</p>{ev.upstreamSection}</div>
-                  <div><p className="text-[9px] font-black text-indigo-600 uppercase mb-1">Downstream</p>{ev.downstreamSection}</div>
-                </div>
-                <div className="mt-2 h-1 bg-slate-100 rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full ${getSimilarityColor(pct)}`} style={{ width: `${pct}%` }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <div className="px-6 py-4 border-t border-slate-100 flex justify-between items-center bg-white">
-          <p className="text-[11px] text-slate-500">Avg similarity {avgSim}% · {weakCount} weak links</p>
-          <Button variant="outline" onClick={onClose}>Close</Button>
-        </div>
-      </dialog>
+    <div className="bg-[#0B1521] px-5 sm:px-6 py-5">
+      <p className="text-[13px] font-bold text-white mb-4">AI Recommendations</p>
+      <table className="w-full max-w-2xl">
+        <thead>
+          <tr className="border-b border-white/10">
+            <th className="text-left py-2.5 pr-6 text-[11px] font-semibold text-white/50 w-32">Metric</th>
+            <th className="text-left py-2.5 text-[11px] font-semibold text-white/50">Result</th>
+          </tr>
+        </thead>
+        <tbody>
+          {metrics.map((metric) => (
+            <tr key={metric.label} className="border-b border-white/[0.06] last:border-0">
+              <td className="py-3.5 pr-6 text-[13px] font-medium text-white/70 align-top">{metric.label}</td>
+              <td className="py-3.5 text-[13px] align-top">{metric.result}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
 export const MatrixPage: React.FC = () => {
-  const [selectedRow, setSelectedRow] = useState<MatrixRow | null>(null);
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [showExport, setShowExport] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'ALL' | DisplayStatus>('ALL');
   const [search, setSearch] = useState('');
@@ -236,7 +214,15 @@ export const MatrixPage: React.FC = () => {
   const currentPage = Math.min(page, totalPages);
   const pagedRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  useEffect(() => { setPage(1); }, [statusFilter, search, selectedGroupId]);
+  useEffect(() => { setPage(1); setExpandedRowId(null); }, [statusFilter, search, selectedGroupId]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setExpandedRowId(null); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
+
+  const auditGaps = audit?.gaps ?? [];
 
   const overallScore = audit?.overallScore ?? 0;
   const criticalTotal = (audit?.gaps ?? []).filter((g) => g.severity === 'CRITICAL').length;
@@ -416,31 +402,42 @@ export const MatrixPage: React.FC = () => {
                     </td>
                   </tr>
                 ) : (
-                  pagedRows.map((row) => (
-                    <tr
-                      key={row.id}
-                      onClick={() => setSelectedRow(row.matrixRow)}
-                      className="hover:bg-slate-50/80 cursor-pointer transition-colors"
-                    >
-                      <td className="px-4 py-4 align-top whitespace-nowrap">
-                        <StatusBadge status={row.displayStatus} />
-                      </td>
-                      <td className="px-4 py-4 align-top text-[13px] font-semibold text-[#1E3A5F] max-w-[200px]">{row.proposalObjective}</td>
-                      <td className="px-4 py-4 align-top text-[12px] text-slate-700 max-w-[200px] leading-snug">{row.srsRequirement}</td>
-                      <td className="px-4 py-4 align-top text-[12px] text-slate-600 max-w-[180px]">
-                        {row.sddComponent ?? <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="px-4 py-4 align-top text-[12px] text-slate-600 max-w-[180px]">
-                        {row.spmpDeliverable ?? <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="px-4 py-4 align-top text-[12px] text-slate-600 max-w-[180px]">
-                        {row.stdCoverage ?? <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="px-4 py-4 align-top max-w-[200px]">
-                        <ImplementationCellView cell={row.implementation} />
-                      </td>
-                    </tr>
-                  ))
+                  pagedRows.map((row) => {
+                    const isExpanded = expandedRowId === row.id;
+                    return (
+                      <React.Fragment key={row.id}>
+                        <tr
+                          onClick={() => setExpandedRowId(isExpanded ? null : row.id)}
+                          className={`cursor-pointer transition-colors ${isExpanded ? 'bg-slate-100' : 'hover:bg-slate-50/80'}`}
+                        >
+                          <td className="px-4 py-4 align-top whitespace-nowrap">
+                            <StatusBadge status={row.displayStatus} />
+                          </td>
+                          <td className="px-4 py-4 align-top text-[13px] font-semibold text-[#1E3A5F] max-w-[200px]">{row.proposalObjective}</td>
+                          <td className="px-4 py-4 align-top text-[12px] text-slate-700 max-w-[200px] leading-snug">{row.srsRequirement}</td>
+                          <td className="px-4 py-4 align-top text-[12px] text-slate-600 max-w-[180px]">
+                            {row.sddComponent ?? <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className="px-4 py-4 align-top text-[12px] text-slate-600 max-w-[180px]">
+                            {row.spmpDeliverable ?? <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className="px-4 py-4 align-top text-[12px] text-slate-600 max-w-[180px]">
+                            {row.stdCoverage ?? <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className="px-4 py-4 align-top max-w-[200px]">
+                            <ImplementationCellView cell={row.implementation} />
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={7} className="p-0 border-t border-slate-200">
+                              <RowExpandedPanel row={row} gaps={auditGaps} />
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -502,7 +499,6 @@ export const MatrixPage: React.FC = () => {
         </div>
       </div>
 
-      {selectedRow && <EvidenceModal row={selectedRow} onClose={() => setSelectedRow(null)} />}
       {showExport && audit && (
         <ExportModal
           onClose={() => setShowExport(false)}

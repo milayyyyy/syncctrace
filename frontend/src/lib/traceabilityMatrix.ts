@@ -196,3 +196,52 @@ export function filterChainRows(
     return haystack.includes(q);
   });
 }
+
+export function rowMetrics(row: ChainMatrixRow): { alignment: number; coverage: number } {
+  const evidenceScores = row.matrixRow.traceEvidence.map((ev) => ev.similarityScore * 100);
+  const avgEvidence = evidenceScores.length > 0
+    ? evidenceScores.reduce((sum, n) => sum + n, 0) / evidenceScores.length
+    : row.matrixRow.alignmentScore;
+  const alignment = Math.round((avgEvidence + row.matrixRow.alignmentScore) / 2);
+
+  const filled = [
+    row.proposalObjective,
+    row.srsRequirement,
+    row.sddComponent,
+    row.spmpDeliverable,
+    row.stdCoverage,
+    row.implementation.kind !== 'missing' ? row.implementation.label : null,
+  ].filter(Boolean).length;
+  const coverage = Math.round((filled / 6) * 100);
+
+  return { alignment, coverage };
+}
+
+function rowKeywords(row: ChainMatrixRow): string[] {
+  return [row.proposalObjective, row.srsRequirement]
+    .flatMap((text) => clean(text).toLowerCase().split(/\W+/))
+    .filter((word) => word.length > 4);
+}
+
+export function rowGapSummary(row: ChainMatrixRow, gaps: Array<{ description: string; recommendation?: string }>): string {
+  const keywords = rowKeywords(row);
+  const related = gaps.filter((gap) => {
+    const text = `${gap.description} ${gap.recommendation ?? ''}`.toLowerCase();
+    return keywords.some((word) => text.includes(word));
+  });
+
+  if (related.length > 0) {
+    return related.slice(0, 2).map((gap) => gap.description).join(' ');
+  }
+
+  const missing: string[] = [];
+  if (!row.sddComponent) missing.push('SDD component mapping');
+  if (!row.spmpDeliverable) missing.push('SPMP deliverable');
+  if (!row.stdCoverage) missing.push('STD test coverage');
+  if (row.implementation.kind === 'missing') missing.push('source code implementation');
+  else if (row.implementation.kind === 'partial') missing.push('complete implementation');
+
+  if (missing.length === 0) return 'No gaps detected for this requirement.';
+  if (missing.length === 1) return `${missing[0]} is missing or incomplete.`;
+  return `${missing.slice(0, -1).join(', ')} and ${missing.at(-1)} are missing or incomplete.`;
+}
