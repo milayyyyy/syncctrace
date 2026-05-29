@@ -6,6 +6,7 @@ import { Badge, severityToBadge } from '../components/ui/Badge';
 import type { Severity } from '../types';
 import { formatDate } from '../lib/utils';
 import { api } from '../services/api';
+import { useAuthStore } from '../stores/authStore';
 
 // Mapped gap shape from API
 interface ApiGap {
@@ -209,9 +210,17 @@ export const DiagnosticsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('ALL');
 
-  interface WorkspaceOption { id: string; name: string; projectTitle: string; auditResults?: unknown[]; }
+  interface WorkspaceAudit { gaps?: ApiGap[]; }
+  interface WorkspaceOption { id: string; name: string; projectTitle: string; auditResults?: WorkspaceAudit[]; }
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
+
+  const applyGaps = useCallback((nextGaps: ApiGap[]) => {
+    const severityOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+    const sorted = [...nextGaps].sort((a, b) => (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99));
+    setGaps(sorted);
+    setSelected((current) => current && sorted.some((gap) => gap.id === current.id) ? current : sorted[0] ?? null);
+  }, []);
 
   // Fetch all groups — prefer the group that has audit results
   useEffect(() => {
@@ -219,30 +228,37 @@ export const DiagnosticsPage: React.FC = () => {
       .then((res) => {
         const groups: WorkspaceOption[] = res.data.groups ?? [];
         setWorkspaces(groups);
-        // Pick the first group that has audit results, otherwise fall back to first group
+        const activeGroupId = useAuthStore.getState().groupId;
+        const activeGroup = groups.find((g) => g.id === activeGroupId);
         const withAudit = groups.find((g) => (g.auditResults?.length ?? 0) > 0);
-        const best = withAudit ?? groups[0];
-        if (best) setSelectedGroupId(best.id);
+        const best = activeGroup && (activeGroup.auditResults?.length ?? 0) > 0
+          ? activeGroup
+          : withAudit ?? activeGroup ?? groups[0];
+        if (best) {
+          setSelectedGroupId(best.id);
+          applyGaps(best.auditResults?.[0]?.gaps ?? []);
+        }
+        setLoading(false);
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => { setLoading(false); });
+  }, [applyGaps]);
+
+  const handleWorkspaceChange = (id: string) => {
+    setSelectedGroupId(id);
+    const cachedGaps = workspaces.find((ws) => ws.id === id)?.auditResults?.[0]?.gaps ?? [];
+    applyGaps(cachedGaps);
+    setLoading(cachedGaps.length === 0);
+  };
 
   const fetchGaps = useCallback(async () => {
     if (!selectedGroupId) { setLoading(false); return; }
-    setLoading(true);
-    setGaps([]);
-    setSelected(null);
     try {
       const res = await api.get(`/api/audit/${selectedGroupId}/latest`);
       const result = res.data.auditResult;
-      const fetchedGaps: ApiGap[] = result?.gaps ?? [];
-      const severityOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-      fetchedGaps.sort((a, b) => (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99));
-      setGaps(fetchedGaps);
-      if (fetchedGaps.length > 0) setSelected(fetchedGaps[0]);
+      applyGaps(result?.gaps ?? []);
     } catch { /* no audit yet */ }
     finally { setLoading(false); }
-  }, [selectedGroupId]);
+  }, [applyGaps, selectedGroupId]);
 
   useEffect(() => { fetchGaps(); }, [fetchGaps]);
 
@@ -259,7 +275,7 @@ export const DiagnosticsPage: React.FC = () => {
     <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
       <select
         value={selectedGroupId}
-        onChange={(e) => setSelectedGroupId(e.target.value)}
+        onChange={(e) => handleWorkspaceChange(e.target.value)}
         style={{
           appearance: 'none' as const,
           WebkitAppearance: 'none' as const,

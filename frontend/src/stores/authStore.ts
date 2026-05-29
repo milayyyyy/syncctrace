@@ -36,6 +36,23 @@ function oauthRedirectUrl(): string {
   return `${globalThis.location.origin}/login`;
 }
 
+function oauthState(role: Role | null): string {
+  return btoa(JSON.stringify({ role, nonce: crypto.randomUUID() }));
+}
+
+function pendingRoleFromOAuthState(): Role | null {
+  const params = new URLSearchParams(globalThis.location.search);
+  const hashParams = new URLSearchParams(globalThis.location.hash.replace(/^#/, ''));
+  const encoded = params.get('state') ?? hashParams.get('state');
+  if (!encoded) return null;
+  try {
+    const payload = JSON.parse(atob(decodeURIComponent(encoded))) as { role?: Role | null };
+    return payload.role === 'STUDENT' || payload.role === 'FACULTY' ? payload.role : null;
+  } catch {
+    return null;
+  }
+}
+
 /** In-flight guard: prevents concurrent duplicate initFromSession calls (e.g. React StrictMode). */
 let initInFlight: Promise<void> | null = null;
 
@@ -126,11 +143,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       return;
     }
-    // No session — OAuth without a pending_role (login flow, existing accounts only)
-    localStorage.removeItem('pending_role');
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: oauthRedirectUrl() },
+      options: {
+        redirectTo: oauthRedirectUrl(),
+        queryParams: { state: oauthState(null) },
+      },
     });
   },
 
@@ -154,20 +172,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           set({ authError: 'Sign-up failed. Please try again.' });
           return;
         }
-        // 404 = no backend account yet — create one via OAuth
-        localStorage.setItem('pending_role', selectedRole);
         await supabase.auth.signInWithOAuth({
           provider: 'google',
-          options: { redirectTo: oauthRedirectUrl() },
+          options: {
+            redirectTo: oauthRedirectUrl(),
+            queryParams: { state: oauthState(selectedRole) },
+          },
         });
       }
       return;
     }
-    // No session — OAuth to register a new account
-    localStorage.setItem('pending_role', selectedRole);
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: oauthRedirectUrl() },
+      options: {
+        redirectTo: oauthRedirectUrl(),
+        queryParams: { state: oauthState(selectedRole) },
+      },
     });
   },
 
@@ -190,9 +210,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       resolve();
       return;
     }
-
-    const pendingRole = localStorage.getItem('pending_role') as Role | null;
-    localStorage.removeItem('pending_role');
+    const pendingRole = pendingRoleFromOAuthState();
 
     try {
       const res = await fetchUserProfile(session, pendingRole);

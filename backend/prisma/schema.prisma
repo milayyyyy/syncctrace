@@ -72,7 +72,7 @@ model FacultyGroup {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  advisor     User          @relation("FacultyAdvisor", fields: [advisorId], references: [id])
+  advisor     User          @relation("FacultyAdvisor", fields: [advisorId], references: [id], onDelete: Cascade)
   members     User[]        @relation("GroupMembers")
   artifacts   Artifact[]
   auditResults AuditResult[]
@@ -88,7 +88,7 @@ model Artifact {
   uploadedAt  DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
-  group            FacultyGroup       @relation(fields: [groupId], references: [id])
+  group            FacultyGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade)
   upstreamLinks    TraceabilityLink[] @relation("UpstreamArtifact")
   downstreamLinks  TraceabilityLink[] @relation("DownstreamArtifact")
 
@@ -105,9 +105,9 @@ model TraceabilityLink {
   auditResultId  String?
   createdAt      DateTime    @default(now())
 
-  upstream      Artifact     @relation("UpstreamArtifact", fields: [upstreamId], references: [id])
-  downstream    Artifact     @relation("DownstreamArtifact", fields: [downstreamId], references: [id])
-  auditResult   AuditResult? @relation(fields: [auditResultId], references: [id])
+  upstream      Artifact     @relation("UpstreamArtifact", fields: [upstreamId], references: [id], onDelete: Cascade)
+  downstream    Artifact     @relation("DownstreamArtifact", fields: [downstreamId], references: [id], onDelete: Cascade)
+  auditResult   AuditResult? @relation(fields: [auditResultId], references: [id], onDelete: SetNull)
 }
 
 model AuditResult {
@@ -117,7 +117,7 @@ model AuditResult {
   readinessStatus ReadinessStatus
   auditedAt       DateTime        @default(now())
 
-  group           FacultyGroup       @relation(fields: [groupId], references: [id])
+  group           FacultyGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade)
   traceLinks      TraceabilityLink[]
   gaps            Gap[]
   exportJobs      ExportJob[]
@@ -135,7 +135,7 @@ model Gap {
   resolvedAt       DateTime?
   createdAt        DateTime    @default(now())
 
-  auditResult      AuditResult @relation(fields: [auditResultId], references: [id])
+  auditResult      AuditResult @relation(fields: [auditResultId], references: [id], onDelete: Cascade)
 }
 
 model ExportJob {
@@ -148,6 +148,6 @@ model ExportJob {
   createdAt     DateTime     @default(now())
   completedAt   DateTime?
 
-  user          User         @relation(fields: [userId], references: [id])
-  auditResult   AuditResult  @relation(fields: [auditResultId], references: [id])
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  auditResult   AuditResult  @relation(fields: [auditResultId], references: [id], onDelete: Cascade)
 }

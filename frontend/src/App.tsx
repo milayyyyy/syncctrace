@@ -9,6 +9,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { ArtifactsPage } from './pages/ArtifactsPage';
 import { MatrixPage } from './pages/MatrixPage';
 import { DiagnosticsPage } from './pages/DiagnosticsPage';
+import { ExportPage } from './pages/ExportPage';
 import { FacultyDashboardPage } from './pages/FacultyDashboardPage';
 import { GroupDetailPage } from './pages/GroupDetailPage';
 
@@ -96,6 +97,7 @@ function AppRoutes() {
       <Route path="/artifacts" element={<ProtectedRoute requiredRole="STUDENT"><ArtifactsPage /></ProtectedRoute>} />
       <Route path="/matrix" element={<ProtectedRoute requiredRole="STUDENT"><MatrixPage /></ProtectedRoute>} />
       <Route path="/diagnostics" element={<ProtectedRoute requiredRole="STUDENT"><DiagnosticsPage /></ProtectedRoute>} />
+      <Route path="/export" element={<ProtectedRoute requiredRole="STUDENT"><ExportPage /></ProtectedRoute>} />
 
       <Route path="/faculty" element={<ProtectedRoute requiredRole="FACULTY"><FacultyDashboardPage /></ProtectedRoute>} />
       <Route path="/faculty/group/:id" element={<ProtectedRoute requiredRole="FACULTY"><GroupDetailPage /></ProtectedRoute>} />

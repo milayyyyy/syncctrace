@@ -1,186 +1,206 @@
-import React, { useState, useEffect } from 'react';
-import { Download, FileText, FileJson, FileSpreadsheet, CheckCircle2, RefreshCw, Clock, HardDrive, Trash2 } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertCircle, CheckCircle2, Clock, Download, FileText, HardDrive, RefreshCw } from 'lucide-react';
 import { Layout } from '../components/shared/Layout';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
-import { Badge } from '../components/ui/Badge';
-import type { ExportFormat } from '../types';
+import { ExportModal } from '../components/shared/ExportModal';
+import { api } from '../services/api';
+import { useAuthStore } from '../stores/authStore';
+import type { ExportFormat, ReadinessStatus } from '../types';
+import type { ExportAudit } from '../services/export';
 
-interface FormatOption {
-  value: ExportFormat;
-  label: string;
-  description: string;
-  icon: React.ReactNode;
-}
-
-const FORMAT_OPTIONS: FormatOption[] = [
-  {
-    value: 'PDF',
-    label: 'PDF Report',
-    description: 'Full audit report with visualizations, matrix, and AI diagnostics',
-    icon: <FileText size={20} />,
-  },
-  {
-    value: 'JSON',
-    label: 'JSON Data',
-    description: 'Machine-readable traceability data for external processing',
-    icon: <FileJson size={20} />,
-  },
-  {
-    value: 'CSV',
-    label: 'CSV Spreadsheet',
-    description: 'Matrix and gap data in spreadsheet format for analysis',
-    icon: <FileSpreadsheet size={20} />,
-  },
-];
-
-type ExportStage = 'idle' | 'processing' | 'done';
-
-interface HistoryItem {
+interface ApiAudit extends ExportAudit {
   id: string;
-  format: ExportFormat;
-  date: string;
-  size: string;
+  readinessStatus: ReadinessStatus;
+  auditedAt: string;
 }
 
-const EXPORT_LOGS = [
-  'Initializing export engine & verifying authorization...',
-  'Retrieving workspace traceability definitions...',
-  'Validating proposal requirements mapping matrices...',
-  'Compiling AI code-to-specification recommendations...',
-  'Formatting vector charts & status indicators...',
-  'Polishing table structures & layout alignments...',
-  'Compressing file stream buffer to target package...',
-  'Finalizing file stream binaries... Ready!'
-];
+interface ApiGroup {
+  id: string;
+  name: string;
+  projectTitle: string;
+  auditResults: ApiAudit[];
+}
+
+interface ExportJob {
+  id: string;
+  auditResultId: string;
+  format: ExportFormat;
+  fileUrl: string | null;
+  status: string;
+  createdAt: string;
+  completedAt: string | null;
+  auditResult?: {
+    group?: {
+      projectTitle: string;
+      name: string;
+    };
+  };
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function statusLabel(status: ReadinessStatus): string {
+  return status.replaceAll('_', ' ').toLowerCase().replace(/^\w|\s\w/g, (m) => m.toUpperCase());
+}
 
 export const ExportPage: React.FC = () => {
-  const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('PDF');
-  const [stage, setStage] = useState<ExportStage>('idle');
-  const [progress, setProgress] = useState(0);
-  const [logIndex, setLogIndex] = useState(0);
-  
-  // Historical logs tracking user downloads
-  const [history, setHistory] = useState<HistoryItem[]>([
-    { id: '1', format: 'PDF', date: 'Just now', size: '2.4 MB' },
-    { id: '2', format: 'JSON', date: 'Yesterday at 3:12 PM', size: '382 KB' },
-  ]);
+  const { groupId, setGroupId } = useAuthStore();
+  const [groups, setGroups] = useState<ApiGroup[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState(groupId ?? '');
+  const [history, setHistory] = useState<ExportJob[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showExport, setShowExport] = useState(false);
+
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await api.get('/api/export');
+      setHistory(res.data.jobs ?? []);
+    } catch {
+      setHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval>;
-    if (stage === 'processing') {
-      setProgress(0);
-      setLogIndex(0);
-      
-      const intervalTime = 350; // Total duration about 2.8s
-      timer = setInterval(() => {
-        setProgress((prev) => {
-          if (prev >= 100) {
-            clearInterval(timer);
-            setStage('done');
-            return 100;
-          }
-          const nextVal = prev + 12.5;
-          setLogIndex(Math.min(Math.floor(nextVal / 12.5), EXPORT_LOGS.length - 1));
-          return nextVal;
-        });
-      }, intervalTime);
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await api.get('/api/projects');
+        const fetched: ApiGroup[] = res.data.groups ?? [];
+        setGroups(fetched);
+        const nextGroupId = selectedGroupId || groupId || fetched[0]?.id || '';
+        setSelectedGroupId(nextGroupId);
+        if (nextGroupId) setGroupId(nextGroupId);
+      } catch {
+        setError('Could not load audit data. Please try again.');
+      } finally {
+        setLoading(false);
+      }
     }
-    return () => clearInterval(timer);
-  }, [stage]);
+    load();
+  }, [groupId, selectedGroupId, setGroupId]);
 
-  const handleExport = () => {
-    setStage('processing');
+  useEffect(() => { fetchHistory(); }, [fetchHistory]);
+
+  const selectedGroup = useMemo(
+    () => groups.find((g) => g.id === selectedGroupId) ?? groups[0],
+    [groups, selectedGroupId],
+  );
+  const latestAudit = selectedGroup?.auditResults[0] ?? null;
+  const projectTitle = selectedGroup?.projectTitle || selectedGroup?.name || 'Untitled Project';
+
+  const handleExportComplete = async (format: ExportFormat) => {
+    if (!latestAudit) return;
+    await api.post('/api/export', { auditResultId: latestAudit.id, format });
+    await fetchHistory();
   };
 
-  const handleReset = () => {
-    setStage('idle');
-  };
-
-  const handleDownload = () => {
-    // Append a new item dynamically to the export logs history!
-    const sizeMap = { PDF: '2.4 MB', JSON: '382 KB', CSV: '180 KB' };
-    const newItem: HistoryItem = {
-      id: Date.now().toString(),
-      format: selectedFormat,
-      date: 'Just now',
-      size: sizeMap[selectedFormat],
-    };
-    setHistory((prev) => [newItem, ...prev.filter(x => x.id !== '1' && x.id !== '2')]);
-    alert(`Downloading ${selectedFormat} report now!`);
-  };
-
-  const clearHistory = () => {
-    setHistory([]);
+  const handleSelectGroup = (id: string) => {
+    setSelectedGroupId(id);
+    setGroupId(id);
   };
 
   return (
     <Layout
       title="Export Report"
-      subtitle="Generate and download your full audit report in PDF, JSON, or CSV"
+      subtitle="Generate audit reports from the latest saved traceability analysis"
       badge="Report Generator"
       heroIcon={<Download size={26} />}
     >
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-5xl items-start">
-        {/* Left 2 cols for export block */}
         <div className="lg:col-span-2 space-y-4">
-          {stage === 'idle' && (
+          {loading && (
+            <Card className="py-16 text-center">
+              <Spinner size="lg" label="Loading export data..." className="mx-auto" />
+            </Card>
+          )}
+
+          {!loading && error && (
+            <Card className="p-6 border border-red-100 bg-red-50">
+              <div className="flex gap-3">
+                <AlertCircle size={18} className="text-red-500 shrink-0 mt-0.5" />
+                <p className="text-sm font-semibold text-red-700">{error}</p>
+              </div>
+            </Card>
+          )}
+
+          {!loading && !error && !latestAudit && (
+            <Card className="text-center py-16">
+              <div className="w-16 h-16 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center mx-auto mb-5">
+                <FileText size={28} className="text-slate-300" />
+              </div>
+              <h2 className="text-[16px] font-bold text-gray-800 mb-2">No audit available</h2>
+              <p className="text-[13px] text-gray-400 mb-6 leading-relaxed max-w-sm mx-auto">
+                Run a traceability audit first. The export page uses the latest saved audit result for each workspace.
+              </p>
+            </Card>
+          )}
+
+          {!loading && !error && latestAudit && (
             <>
-              {/* Format selector */}
-              <Card className="hover:shadow duration-200 transition-all border border-slate-100 p-6">
-                <h2 className="text-[14px] font-bold text-gray-900 mb-4 tracking-tight">Select Export Format</h2>
-                <div className="space-y-3">
-                  {FORMAT_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => setSelectedFormat(opt.value)}
-                      className={`w-full flex items-start gap-4 p-4 rounded-2xl border text-left transition-all duration-150 ${
-                        selectedFormat === opt.value
-                          ? 'border-primary bg-primary/[0.03] ring-1 ring-primary/10 shadow-sm'
-                          : 'border-slate-100 hover:border-slate-200 bg-white hover:bg-slate-50'
-                      }`}
+              <Card className="p-6 border border-slate-100">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-5">
+                  <div>
+                    <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-widest mb-2">Current Audit</p>
+                    <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">{projectTitle}</h2>
+                    <p className="text-[12px] text-slate-400 font-medium mt-1">
+                      Audited {formatDate(latestAudit.auditedAt)}
+                    </p>
+                  </div>
+                  {groups.length > 1 && (
+                    <select
+                      value={selectedGroup?.id ?? ''}
+                      onChange={(e) => handleSelectGroup(e.target.value)}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-bold text-slate-600 outline-none"
                     >
-                      <div
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border transition-colors ${
-                          selectedFormat === opt.value
-                            ? 'bg-gradient-primary text-white border-primary/20'
-                            : 'bg-slate-50 text-gray-400 border-slate-100'
-                        }`}
-                      >
-                        {opt.icon}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-[13px] font-bold text-gray-900">{opt.label}</p>
-                          {opt.value === 'PDF' && (
-                            <Badge variant="ready" dot>Recommended</Badge>
-                          )}
-                        </div>
-                        <p className="text-[12px] text-gray-400 mt-0.5 font-medium leading-relaxed">{opt.description}</p>
-                      </div>
-                      {selectedFormat === opt.value && (
-                        <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center shrink-0 mt-0.5">
-                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                          </svg>
-                        </div>
-                      )}
-                    </button>
-                  ))}
+                      {groups.map((group) => (
+                        <option key={group.id} value={group.id}>{group.projectTitle || group.name}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-6">
+                  <div className="rounded-2xl bg-slate-50 border border-slate-100 p-4">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Score</p>
+                    <p className="text-3xl font-black text-brand-navy mt-1">{latestAudit.overallScore.toFixed(1)}%</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 border border-slate-100 p-4">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</p>
+                    <p className="text-[13px] font-extrabold text-slate-800 mt-2">{statusLabel(latestAudit.readinessStatus)}</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 border border-slate-100 p-4">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Evidence</p>
+                    <p className="text-[13px] font-extrabold text-slate-800 mt-2">
+                      {latestAudit.traceLinks.length} links, {latestAudit.gaps.length} gaps
+                    </p>
+                  </div>
                 </div>
               </Card>
 
-              {/* What's included */}
               <Card className="bg-slate-50/60 border border-slate-100/90 p-5">
                 <h3 className="text-[11.5px] font-extrabold text-slate-500 uppercase tracking-widest mb-3.5">Report includes</h3>
                 <ul className="space-y-2.5">
                   {[
-                    'Project information & metadata details',
-                    'Full alignment matrix with coverage levels',
-                    'High & Critical specification gap logs',
-                    'AI recommendations & immediate actionable next steps',
-                    'Audit timestamp with digital authentication signature',
+                    'Project metadata and audit timestamp',
+                    'Full alignment matrix with status per artifact pair',
+                    'Critical and high severity gap logs',
+                    'Root cause details and AI recommendations',
+                    'JSON, CSV, and printable PDF output options',
                   ].map((item) => (
                     <li key={item} className="flex items-start gap-2.5 text-[12.5px] text-gray-600 font-medium">
                       <CheckCircle2 size={14} className="text-emerald-500 shrink-0 mt-0.5" />
@@ -190,67 +210,14 @@ export const ExportPage: React.FC = () => {
                 </ul>
               </Card>
 
-              <Button size="lg" className="w-full text-sm py-3.5 shadow-md shadow-primary/10 hover:shadow-lg hover:shadow-primary/15 transition-all text-white hover:scale-[1.01]" onClick={handleExport}>
-                <Download size={16} className="mr-0.5" />
-                Generate {selectedFormat} Report
+              <Button size="lg" className="w-full text-sm py-3.5 text-white" onClick={() => setShowExport(true)}>
+                <Download size={16} />
+                Generate Report
               </Button>
             </>
           )}
-
-          {stage === 'processing' && (
-            <Card className="py-16 text-center shadow-lg border border-slate-100 p-8 space-y-4">
-              <Spinner size="lg" label="" className="mx-auto mb-2" />
-              <h3 className="text-base font-bold text-slate-800">Generating Audit Report...</h3>
-              <p className="text-xs text-gray-400 mt-2 font-medium">
-                Compiling specifications, file structures &amp; AI validations
-              </p>
-              
-              {/* Dynamic status ticker */}
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-[11px] text-primary font-bold animate-pulse">
-                <RefreshCw size={11} className="animate-spin" />
-                <span>{EXPORT_LOGS[logIndex]}</span>
-              </div>
-
-              {/* Advanced visual progress bar */}
-              <div className="mt-8 mx-auto max-w-sm">
-                <div className="flex justify-between text-[11px] text-slate-400 font-bold mb-1.5">
-                  <span>PROGRESS</span>
-                  <span>{progress}%</span>
-                </div>
-                <div className="h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200/40">
-                  <div 
-                    className="h-full bg-gradient-primary rounded-full transition-all duration-300 ease-out" 
-                    style={{ width: `${progress}%` }} 
-                  />
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {stage === 'done' && (
-            <Card className="text-center py-14 shadow-lg border border-slate-100">
-              <div className="w-16 h-16 rounded-2xl bg-emerald-50 ring-4 ring-emerald-50/50 border border-emerald-200 flex items-center justify-center mx-auto mb-5 animate-bounce">
-                <CheckCircle2 size={32} className="text-emerald-500" />
-              </div>
-              <h2 className="text-[20px] font-extrabold text-blue-900 mb-2 tracking-tight">Report Compiled!</h2>
-              <p className="text-[13px] text-slate-400 mb-6 font-medium">
-                Your authenticated <span className="font-bold text-slate-700">{selectedFormat}</span> artifact is ready for distribution.
-              </p>
-              
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 max-w-md mx-auto">
-                <Button size="lg" className="w-full text-white" onClick={handleDownload}>
-                  <Download size={16} />
-                  Download File
-                </Button>
-                <Button variant="outline" size="lg" className="w-full" onClick={handleReset}>
-                  Export Another Format
-                </Button>
-              </div>
-            </Card>
-          )}
         </div>
 
-        {/* Right 1 col for Export history / details context */}
         <div className="space-y-4">
           <Card className="p-5 border border-slate-100/90 bg-white/50 backdrop-blur-sm">
             <div className="flex items-center justify-between mb-4">
@@ -258,67 +225,54 @@ export const ExportPage: React.FC = () => {
                 <Clock size={15} className="text-gray-400" />
                 <h4 className="text-xs font-extrabold text-slate-600 uppercase tracking-widest">Recent Downloads</h4>
               </div>
-              {history.length > 0 && (
-                <button 
-                  onClick={clearHistory}
-                  className="text-[11px] font-bold text-rose-500 hover:text-rose-600 flex items-center gap-1 transition-colors"
-                >
-                  <Trash2 size={11} />
-                  Clear
-                </button>
-              )}
+              <button type="button" onClick={fetchHistory} className="text-[11px] font-bold text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors">
+                <RefreshCw size={11} />
+                Refresh
+              </button>
             </div>
 
-            {history.length === 0 ? (
+            {historyLoading ? (
+              <div className="py-8"><Spinner size="sm" label="Loading history..." className="mx-auto" /></div>
+            ) : history.length === 0 ? (
               <div className="text-center py-8 bg-slate-50/40 rounded-xl border border-dashed border-slate-100 text-gray-400">
                 <HardDrive size={24} className="mx-auto mb-2 opacity-40 text-slate-300" />
-                <p className="text-[11px] font-semibold uppercase tracking-wider">No historic exports</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wider">No export history</p>
                 <p className="text-[10px] text-gray-300 mt-1">Generated files appear here</p>
               </div>
             ) : (
               <div className="space-y-2.5">
                 {history.map((item) => (
-                  <button 
-                    key={item.id} 
-                    type="button"
-                    className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:border-slate-200 hover:bg-slate-50/50 transition-all text-left font-normal"
-                    onClick={handleDownload}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleDownload(); } }}
-                  >
-                    <div className="flex items-center gap-3">
+                  <div key={item.id} className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-white text-left">
+                    <div className="flex items-center gap-3 min-w-0">
                       <div className="p-2 rounded-lg bg-slate-100/80 text-slate-500 flex items-center justify-center font-bold text-xs select-none">
                         {item.format}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-xs font-bold text-gray-800 truncate">{item.format === 'PDF' ? 'Full Report' : 'Raw Data'}</p>
-                        <p className="text-[10px] text-gray-400 font-medium">{item.date}</p>
+                        <p className="text-xs font-bold text-gray-800 truncate">
+                          {item.auditResult?.group?.projectTitle || item.auditResult?.group?.name || 'Audit Report'}
+                        </p>
+                        <p className="text-[10px] text-gray-400 font-medium">{formatDate(item.createdAt)}</p>
                       </div>
                     </div>
-                    <div className="text-right shrink-0">
-                      <span className="text-[10.5px] font-bold text-slate-500 bg-slate-50 border border-slate-100 px-2 py-0.5 rounded">
-                        {item.size}
-                      </span>
-                    </div>
-                  </button>
+                    <span className="text-[10.5px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded">
+                      {item.status}
+                    </span>
+                  </div>
                 ))}
               </div>
             )}
           </Card>
-
-          <Card className="bg-gradient-to-tr from-indigo-900 to-slate-900 text-white p-5 border-none shadow-md overflow-hidden relative">
-            {/* Background elements */}
-            <div className="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-indigo-500/10 blur-xl pointer-events-none" />
-            <h4 className="text-xs font-extrabold text-indigo-200 uppercase tracking-widest mb-1">Signed Integrity</h4>
-            <p className="text-xs text-indigo-100 mb-3 font-medium leading-relaxed">
-              Every exported report includes a cryptographically verifiable SHA-256 hash containing all document requirements.
-            </p>
-            <div className="p-2.5 rounded-lg bg-white/10 border border-white/10 flex items-center justify-between text-[11px] font-mono text-indigo-200">
-              <span className="truncate mr-2">SHA256: 8f2b3e8c9...</span>
-              <span className="text-[9px] font-bold bg-indigo-500/40 text-white px-1.5 py-0.5 rounded">SECURE</span>
-            </div>
-          </Card>
         </div>
       </div>
+
+      {showExport && latestAudit && (
+        <ExportModal
+          onClose={() => setShowExport(false)}
+          auditData={latestAudit}
+          projectTitle={projectTitle}
+          onExportComplete={handleExportComplete}
+        />
+      )}
     </Layout>
   );
 };
