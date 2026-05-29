@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Search, ChevronRight, Users, AlertCircle, TrendingUp, CheckCircle2,
   AlertTriangle, Loader2, Calendar, Shield,
@@ -6,18 +6,8 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/shared/Layout';
 import type { ReadinessStatus } from '../types';
-import { api } from '../services/api';
-
-interface ApiMember { id: string; name: string; email: string; role: string; }
-interface ApiAudit { overallScore: number; readinessStatus: ReadinessStatus; auditedAt: string; gaps: Array<{ severity: string }>; }
-interface ApiGroup {
-  id: string;
-  name: string;
-  projectTitle: string;
-  teamCode: string;
-  members: ApiMember[];
-  auditResults: ApiAudit[];
-}
+import { useProjects } from '../hooks/queries';
+import type { ApiGroup } from '../types/api';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -55,7 +45,7 @@ interface GroupCardProps {
 function GroupCard({ group, onClick }: GroupCardProps) {
   const audit = group.auditResults[0] ?? null;
   const score = audit?.overallScore ?? 0;
-  const status: ReadinessStatus = audit?.readinessStatus ?? 'NEEDS_REVISION';
+  const status: ReadinessStatus = (audit?.readinessStatus as ReadinessStatus | undefined) ?? 'NEEDS_REVISION';
   const pill = getReadinessPill(status);
   const color = scoreColor(score);
   const criticals = (audit?.gaps ?? []).filter((g) => g.severity === 'CRITICAL').length;
@@ -121,7 +111,7 @@ function GroupCard({ group, onClick }: GroupCardProps) {
             {audit ? (
               <span className="flex items-center gap-1 text-[10px] font-medium text-gray-400">
                 <Calendar size={10} />
-                {formatAuditDate(audit.auditedAt)}
+                {audit.auditedAt ? formatAuditDate(audit.auditedAt) : '—'}
               </span>
             ) : (
               <span className="text-[10px] font-medium text-gray-400">No audit yet</span>
@@ -161,15 +151,7 @@ export const FacultyDashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState<ReadinessStatus | 'ALL'>('ALL');
-  const [groups, setGroups]             = useState<ApiGroup[]>([]);
-  const [loading, setLoading]           = useState(true);
-
-  useEffect(() => {
-    api.get('/api/projects')
-      .then((res) => setGroups(res.data.groups ?? []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+  const { data: groups = [], isPending: loading } = useProjects();
 
   const filtered = groups.filter((g) => {
     const status: ReadinessStatus = g.auditResults[0]?.readinessStatus ?? 'NEEDS_REVISION';

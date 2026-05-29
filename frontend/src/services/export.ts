@@ -1,4 +1,5 @@
 import type { ExportFormat } from '../types';
+import type { ApiAudit } from '../types/api';
 
 export interface ExportAudit {
   id?: string;
@@ -18,6 +19,28 @@ export interface ExportAudit {
     recommendation?: string;
     aiConfidence?: number;
   }>;
+}
+
+export function toExportAudit(audit: ApiAudit): ExportAudit {
+  return {
+    id: audit.id,
+    overallScore: audit.overallScore,
+    readinessStatus: audit.readinessStatus,
+    auditedAt: audit.auditedAt,
+    traceLinks: (audit.traceLinks ?? []).map((link) => ({
+      upstream: link.upstream,
+      downstream: link.downstream,
+      alignmentScore: link.alignmentScore,
+      status: link.status,
+    })),
+    gaps: (audit.gaps ?? []).map((gap) => ({
+      severity: gap.severity,
+      description: gap.description,
+      rootCause: gap.rootCause,
+      recommendation: gap.recommendation,
+      aiConfidence: gap.aiConfidence,
+    })),
+  };
 }
 
 export function exportFilename(projectTitle: string, format: ExportFormat): string {

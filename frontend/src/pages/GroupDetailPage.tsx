@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -23,41 +23,12 @@ import { Badge, severityToBadge, readinessToBadge, readinessLabel } from '../com
 import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
 import type { Severity, ReadinessStatus, MatrixRow, TraceEvidence } from '../types';
-import type { ExportAudit } from '../services/export';
-import { api } from '../services/api';
+import { toExportAudit } from '../services/export';
+import { useProject } from '../hooks/queries';
+import type { ApiGap, ApiTraceLink } from '../types/api';
 
-interface ApiMember { id: string; name: string; email: string; }
-interface ApiGap {
-  id: string;
-  description: string;
-  severity: Severity;
-  rootCause: string;
-  recommendation: string;
-  aiConfidence: number;
-  affectedArtifacts: string[];
-  createdAt: string;
-}
-interface ApiLink {
-  id: string;
-  upstream: { type: string };
-  downstream: { type: string };
-  alignmentScore: number;
-  status: 'PASS' | 'WARN' | 'FAIL';
+interface ApiLink extends ApiTraceLink {
   evidencePairs: Array<{ upstream: string; downstream: string; similarity: number }>;
-}
-interface ApiAudit {
-  overallScore: number;
-  readinessStatus: ReadinessStatus;
-  auditedAt: string;
-  traceLinks: ApiLink[];
-  gaps: ApiGap[];
-}
-interface ApiGroup {
-  id: string;
-  projectTitle: string;
-  teamCode: string;
-  members: ApiMember[];
-  auditResults: ApiAudit[];
 }
 
 const severityIcon: Record<Severity, React.ReactNode> = {
@@ -81,17 +52,8 @@ export const GroupDetailPage: React.FC = () => {
   const [selectedGap, setSelectedGap] = useState<ApiGap | null>(null);
   const [selectedRow, setSelectedRow] = useState<MatrixRow | null>(null);
   const [showExport, setShowExport] = useState(false);
-  const [group, setGroup] = useState<ApiGroup | null>(null);
-  const [loading, setLoading] = useState(true);
   const [gapFilter, setGapFilter] = useState<Severity | 'ALL'>('ALL');
-
-  useEffect(() => {
-    if (!id) return;
-    api.get(`/api/projects/${id}`)
-      .then((res) => setGroup(res.data.group))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [id]);
+  const { data: group, isPending: loading } = useProject(id);
 
   if (loading) {
     return (
@@ -112,7 +74,7 @@ export const GroupDetailPage: React.FC = () => {
     );
   }
 
-  const latestAudit: ApiAudit | undefined = group.auditResults[0];
+  const latestAudit = group.auditResults[0];
   const severityOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
   const allGaps: ApiGap[] = [...(latestAudit?.gaps ?? [])].sort((a, b) => (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99));
   const gaps = allGaps.filter(g => gapFilter === 'ALL' || g.severity === gapFilter);
@@ -122,25 +84,9 @@ export const GroupDetailPage: React.FC = () => {
   const criticalGaps = allGaps.filter((g) => g.severity === 'CRITICAL').length;
   const warnings = allGaps.filter((g) => g.severity === 'HIGH').length;
 
-  const exportAudit: ExportAudit = {
-    overallScore: healthScore,
-    readinessStatus: readinessStatus,
-    traceLinks: (latestAudit?.traceLinks ?? []).map(link => ({
-      upstream: link.upstream,
-      downstream: link.downstream,
-      alignmentScore: link.alignmentScore,
-      status: link.status
-    })),
-    gaps: gaps.map(gap => ({
-      severity: gap.severity,
-      description: gap.description,
-      rootCause: gap.rootCause,
-      recommendation: gap.recommendation,
-      aiConfidence: gap.aiConfidence
-    }))
-  };
+  const exportAudit = latestAudit ? toExportAudit(latestAudit) : null;
 
-  const matrixRows: MatrixRow[] = (latestAudit?.traceLinks ?? []).map((link) => ({
+  const matrixRows: MatrixRow[] = (latestAudit?.traceLinks ?? []).map((link: ApiLink) => ({
     id: link.id,
     upstreamType: link.upstream.type,
     downstreamType: link.downstream.type,
@@ -463,7 +409,7 @@ export const GroupDetailPage: React.FC = () => {
                                 </div>
                                 <div className="text-right space-y-1">
                                     <p className="text-[9px] font-black text-brand-navy/40 uppercase tracking-widest">Audited At</p>
-                                    <p className="text-[12px] font-bold text-brand-navy/80">{new Date(selectedGap.createdAt).toLocaleDateString(undefined, { month: '2-digit', day: '2-digit', year: 'numeric' })}</p>
+                                    <p className="text-[12px] font-bold text-brand-navy/80">{selectedGap.createdAt ? new Date(selectedGap.createdAt).toLocaleDateString(undefined, { month: '2-digit', day: '2-digit', year: 'numeric' }) : '—'}</p>
                                 </div>
                             </div>
                         </div>
@@ -531,7 +477,7 @@ export const GroupDetailPage: React.FC = () => {
         </div>
       </div>
 
-      {showExport && (
+      {showExport && exportAudit && (
         <ExportModal
           onClose={() => setShowExport(false)}
           auditData={exportAudit}

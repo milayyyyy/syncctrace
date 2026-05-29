@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronRight, AlertCircle, AlertTriangle, CheckCircle2, Info, ChevronDown, Layers, XCircle, X, Download } from 'lucide-react';
 import type { MatrixRow, TraceEvidence } from '../types';
 import { Layout } from '../components/shared/Layout';
@@ -8,8 +8,9 @@ import { Badge, matrixStatusToBadge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { formatScore } from '../lib/utils';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../services/api';
-import { useAuthStore } from '../stores/authStore';
+import { useLatestAudit, useWorkspacePicker } from '../hooks/queries';
+import type { ApiAudit, ApiTraceLink } from '../types/api';
+import { toExportAudit } from '../services/export';
 
 const RADIUS = 54;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
@@ -250,81 +251,22 @@ export const MatrixPage: React.FC = () => {
   const [selectedRow, setSelectedRow] = useState<MatrixRow | null>(null);
   const [showExport, setShowExport] = useState(false);
   const navigate = useNavigate();
-  const { groupId } = useAuthStore();
-
-  interface RawLink {
-    id: string;
-    upstream: { type: string };
-    downstream: { type: string };
-    alignmentScore: number;
-    coverageScore?: number;
-    status: 'PASS' | 'WARN' | 'FAIL';
-    evidencePairs: Array<{ upstream: string; downstream: string; similarity: number }>;
-  }
-
-  interface RawGap {
-    id?: string;
-    severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
-    description?: string;
-    rootCause?: string;
-    recommendation?: string;
-    aiConfidence?: number;
-    affectedArtifacts?: string[];
-  }
-
-  interface RawAudit {
-    overallScore: number;
-    readinessStatus: string;
-    traceLinks: RawLink[];
-    gaps: RawGap[];
-  }
-
-  interface WorkspaceOption { id: string; name: string; projectTitle: string; auditResults?: RawAudit[]; }
-  const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
-  const [selectedGroupId, setSelectedGroupId] = useState<string>('');
-  const [audit, setAudit] = useState<RawAudit | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  // Fetch all groups — prefer the group that has audit results
-  useEffect(() => {
-    api.get('/api/projects')
-      .then((res) => {
-        const groups: WorkspaceOption[] = res.data.groups ?? [];
-        setWorkspaces(groups);
-        const activeGroup = groups.find((g) => g.id === groupId);
-        const withAudit = groups.find((g) => (g.auditResults?.length ?? 0) > 0);
-        const best = activeGroup && (activeGroup.auditResults?.length ?? 0) > 0
-          ? activeGroup
-          : withAudit ?? activeGroup ?? groups[0];
-        if (best) {
-          setSelectedGroupId(best.id);
-          setAudit(best.auditResults?.[0] ?? null);
-        }
-        setLoading(false);
-      })
-      .catch(() => { setLoading(false); });
-  }, [groupId]);
+  const {
+    workspaces,
+    selectedGroupId,
+    selectedGroup,
+    selectGroup,
+    isInitialLoad,
+  } = useWorkspacePicker({ preferGroupWithAudit: true });
+  const auditQuery = useLatestAudit(selectedGroupId);
+  const audit = (auditQuery.data ?? selectedGroup?.auditResults?.[0] ?? null) as ApiAudit | null;
+  const loading = isInitialLoad && !audit;
 
   const handleWorkspaceChange = (id: string) => {
-    setSelectedGroupId(id);
-    const workspaceAudit = workspaces.find((ws) => ws.id === id)?.auditResults?.[0] ?? null;
-    setAudit(workspaceAudit);
-    setLoading(!workspaceAudit);
+    selectGroup(id);
   };
 
-  const fetchAudit = useCallback(async () => {
-    if (!selectedGroupId) { setLoading(false); return; }
-    try {
-      const res = await api.get(`/api/audit/${selectedGroupId}/latest`);
-      setAudit(res.data.auditResult ?? null);
-    } catch (err) {
-      console.error('MatrixPage fetchAudit error:', err);
-    } finally { setLoading(false); }
-  }, [selectedGroupId]);
-
-  useEffect(() => { fetchAudit(); }, [fetchAudit]);
-
-  const matrixRows: MatrixRow[] = (audit?.traceLinks ?? []).map((link) => {
+  const matrixRows: MatrixRow[] = (audit?.traceLinks ?? []).map((link: ApiTraceLink) => {
     const linkGaps = (audit?.gaps ?? []).filter((g) => g.severity === 'CRITICAL' || g.severity === 'HIGH');
     const criticalGaps = linkGaps.filter((g) => g.severity === 'CRITICAL').length;
     const warnings = linkGaps.filter((g) => g.severity === 'HIGH').length;
@@ -662,7 +604,7 @@ export const MatrixPage: React.FC = () => {
       {showExport && audit && (
         <ExportModal
           onClose={() => setShowExport(false)}
-          auditData={audit}
+          auditData={toExportAudit(audit)}
           projectTitle={workspaces.find((w) => w.id === selectedGroupId)?.projectTitle ?? workspaces.find((w) => w.id === selectedGroupId)?.name ?? 'Audit Report'}
         />
       )}

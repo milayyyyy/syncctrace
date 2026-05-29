@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import type { ArtifactType } from '../types';
 import { api } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
+import { useArtifacts, useInvalidateWorkspace, useWorkspacePicker } from '../hooks/queries';
 
 interface ArtifactField {
   key: ArtifactType;
@@ -286,17 +287,17 @@ function collectUrlErrors(urls: Record<ArtifactType, string>): Partial<Record<Ar
   return errors;
 }
 
-interface WorkspaceOption {
-  id: string;
-  name: string;
-  projectTitle: string;
-}
 
 export const ArtifactsPage: React.FC = () => {
   const navigate = useNavigate();
-  const { groupId, setGroupId } = useAuthStore();
-  const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
-  const [selectedGroupId, setSelectedGroupId] = useState<string>(groupId ?? '');
+  const { setGroupId } = useAuthStore();
+  const invalidateWorkspace = useInvalidateWorkspace();
+  const {
+    workspaces,
+    selectedGroupId,
+    selectGroup,
+  } = useWorkspacePicker();
+  const { data: savedArtifacts = [] } = useArtifacts(selectedGroupId);
   const [urls, setUrls] = useState<Record<ArtifactType, string>>({
     PROPOSAL: '',
     SRS: '',
@@ -316,40 +317,21 @@ export const ArtifactsPage: React.FC = () => {
   // Which pipeline step is currently active (-1 = idle, ≥ PIPELINE_STEPS.length = all done)
   const [pipelineStep, setPipelineStep] = useState(-1);
 
-  // Fetch all workspaces the student belongs to
-  useEffect(() => {
-    api.get('/api/projects')
-      .then((res) => {
-        const groups: Array<{ id: string; name: string; projectTitle: string }> = res.data.groups ?? [];
-        setWorkspaces(groups);
-        if (!selectedGroupId) setSelectedGroupId(groups[0]?.id ?? '');
-      })
-      .catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Reload artifacts when the selected workspace changes
   const resetUrls = useCallback(() => {
     setUrls({ PROPOSAL: '', SRS: '', SDD: '', SPMP: '', STD: '', SOURCE_CODE: '' });
     setSavedTypes(new Set());
   }, []);
 
-  // Load existing artifacts for this group
   useEffect(() => {
     if (!selectedGroupId) return;
     resetUrls();
-    api.get(`/api/artifacts/${selectedGroupId}`)
-      .then((res) => {
-        const saved: Array<{ type: ArtifactType; url: string }> = res.data.artifacts ?? [];
-        if (saved.length === 0) return;
-        const newUrls: Partial<Record<ArtifactType, string>> = {};
-        const types = new Set<ArtifactType>();
-        saved.forEach((a) => { newUrls[a.type] = a.url; types.add(a.type); });
-        setUrls((prev) => ({ ...prev, ...newUrls }));
-        setSavedTypes(types);
-      })
-      .catch(() => {/* no existing artifacts */});
-  }, [selectedGroupId, resetUrls]);
+    if (savedArtifacts.length === 0) return;
+    const newUrls: Partial<Record<ArtifactType, string>> = {};
+    const types = new Set<ArtifactType>();
+    savedArtifacts.forEach((a) => { newUrls[a.type] = a.url; types.add(a.type); });
+    setUrls((prev) => ({ ...prev, ...newUrls }));
+    setSavedTypes(types);
+  }, [selectedGroupId, savedArtifacts, resetUrls]);
 
   const buildFilledArtifacts = () =>
     ARTIFACT_FIELDS
@@ -386,6 +368,7 @@ export const ArtifactsPage: React.FC = () => {
       }
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
+      invalidateWorkspace(selectedGroupId);
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: string } } };
       setSaveError(axiosErr.response?.data?.error ?? 'Failed to save.');
@@ -464,6 +447,7 @@ export const ArtifactsPage: React.FC = () => {
           await new Promise((r) => setTimeout(r, 400));
           setRunning(false);
           setGroupId(selectedGroupId);
+          invalidateWorkspace(selectedGroupId);
           navigate('/matrix');
           return;
         }
@@ -480,6 +464,7 @@ export const ArtifactsPage: React.FC = () => {
         await new Promise((r) => setTimeout(r, 400));
         setRunning(false);
         setGroupId(selectedGroupId);
+        invalidateWorkspace(selectedGroupId);
         navigate('/matrix');
         return;
       }
@@ -495,6 +480,7 @@ export const ArtifactsPage: React.FC = () => {
 
     clearInterval(stepInterval);
     setPipelineStep(PIPELINE_STEPS.length); // mark all steps complete
+    invalidateWorkspace(selectedGroupId);
 
     await new Promise((r) => setTimeout(r, 400));
     setRunning(false);
@@ -509,7 +495,7 @@ export const ArtifactsPage: React.FC = () => {
     <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
       <select
         value={selectedGroupId}
-        onChange={(e) => setSelectedGroupId(e.target.value)}
+        onChange={(e) => selectGroup(e.target.value)}
         disabled={running}
         style={{
           appearance: 'none' as const,

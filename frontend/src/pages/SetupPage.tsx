@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Hash, AlertCircle, Plus, X,
@@ -10,20 +10,8 @@ import { Button } from '../components/ui/Button';
 import { api } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import type { ArtifactType } from '../types';
-
-/* ─── types ──────────────────────────────────────────────── */
-interface ApiMember   { id: string; name: string; email: string; role: string; avatarUrl: string | null; }
-interface ApiArtifact { id: string; type: ArtifactType; url: string; fileName: string | null; uploadedAt: string; }
-interface ApiAudit    { overallScore: number; readinessStatus: string; auditedAt: string; }
-interface ApiGroup {
-  id: string;
-  name: string;
-  projectTitle: string;
-  teamCode: string;
-  members: ApiMember[];
-  artifacts: ApiArtifact[];
-  auditResults: ApiAudit[];
-}
+import { useFacultyList, useInvalidateWorkspace, useProjects } from '../hooks/queries';
+import type { ApiGroup } from '../types/api';
 
 /* ─── artifact checklist order ───────────────────────────── */
 const ARTIFACTS: { key: ArtifactType; short: string }[] = [
@@ -45,7 +33,7 @@ function auditScoreColor(n: number): string {
 /* ─── workspace card ─────────────────────────────────────── */
 function WorkspaceCard({ group }: { readonly group: ApiGroup }) {
   const navigate = useNavigate();
-  const uploadedTypes = new Set(group.artifacts.map((a) => a.type));
+  const uploadedTypes = new Set((group.artifacts ?? []).map((a) => a.type));
   const uploadedCount = uploadedTypes.size;
   const latest   = group.auditResults[0];
   const students = group.members.filter((m) => m.role === 'STUDENT');
@@ -221,15 +209,9 @@ function InitModal({
   const [adviserId, setAdviserId]       = useState('');
   const emailKeyRef = React.useRef(1);
   const [memberEmails, setMemberEmails] = useState<{ key: number; value: string }[]>([{ key: 0, value: '' }]);
-  const [faculty, setFaculty]           = useState<{ id: string; name: string; email: string }[]>([]);
   const [loading, setLoading]           = useState(false);
   const [errors, setErrors]             = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    api.get('/api/users/faculty')
-      .then((res) => setFaculty(res.data.faculty ?? []))
-      .catch(() => {});
-  }, []);
+  const { data: faculty = [] } = useFacultyList();
 
   const validate = (): Record<string, string> => {
     const e: Record<string, string> = {};
@@ -596,41 +578,25 @@ function JoinModal({
 /* ─── page ───────────────────────────────────────────────── */
 export const SetupPage: React.FC = () => {
   const { setGroupId } = useAuthStore();
-  const [groups, setGroups]           = useState<ApiGroup[]>([]);
-  const [pageLoading, setPageLoading] = useState(true);
-  const [loadError, setLoadError]     = useState<string | null>(null);
-  const [showJoin, setShowJoin]       = useState(false);
-  const [showInit, setShowInit]       = useState(false);
+  const invalidateWorkspace = useInvalidateWorkspace();
+  const { data: groups = [], isPending: pageLoading, isError, refetch } = useProjects();
+  const loadError = isError ? 'Could not load workspaces. Check your connection and try again.' : null;
+  const [showJoin, setShowJoin] = useState(false);
+  const [showInit, setShowInit] = useState(false);
 
-  const fetchGroups = useCallback(async () => {
-    setLoadError(null);
-    try {
-      const res = await api.get('/api/projects');
-      const fetched: ApiGroup[] = res.data.groups ?? [];
-      setGroups(fetched);
-      if (fetched.length > 0) setGroupId(fetched[0].id);
-    } catch {
-      setLoadError('Could not load workspaces. Check your connection and try again.');
-    } finally {
-      setPageLoading(false);
-    }
-  }, [setGroupId]);
-
-  useEffect(() => { fetchGroups(); }, [fetchGroups]);
+  useEffect(() => {
+    if (groups.length > 0) setGroupId(groups[0].id);
+  }, [groups, setGroupId]);
 
   const handleJoined = (group: ApiGroup) => {
-    setGroups((prev) => {
-      const exists = prev.some((g) => g.id === group.id);
-      return exists ? prev.map((g) => g.id === group.id ? group : g) : [group, ...prev];
-    });
+    setGroupId(group.id);
+    invalidateWorkspace(group.id);
     setShowJoin(false);
   };
 
   const handleCreated = (group: ApiGroup) => {
-    setGroups((prev) => {
-      const exists = prev.some((g) => g.id === group.id);
-      return exists ? prev.map((g) => g.id === group.id ? group : g) : [group, ...prev];
-    });
+    setGroupId(group.id);
+    invalidateWorkspace(group.id);
     setShowInit(false);
   };
 
@@ -652,7 +618,7 @@ export const SetupPage: React.FC = () => {
         <Card className="text-center py-12">
           <AlertCircle size={32} className="text-red-400 mx-auto mb-4" />
           <p className="text-sm text-gray-600 mb-4">{loadError}</p>
-          <Button onClick={() => { setPageLoading(true); fetchGroups(); }}>Retry</Button>
+          <Button onClick={() => void refetch()}>Retry</Button>
         </Card>
       </Layout>
     );

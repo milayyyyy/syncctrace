@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { useEffect } from 'react';
 import { isOAuthReturn } from './lib/oauth';
 import { useAuthStore } from './stores/authStore';
+import { usePrefetchAppData } from './hooks/usePrefetchRoutes';
 import { LoginPage } from './pages/LoginPage';
 import { SignUpPage } from './pages/SignUpPage';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
@@ -65,6 +66,7 @@ function isOAuthReturnPath(pathname: string): boolean {
 function AppRoutes() {
   const { isAuthenticated, user, groupId, initFromSession } = useAuthStore();
   const location = useLocation();
+  usePrefetchAppData();
 
   useEffect(() => {
     const skipInit =

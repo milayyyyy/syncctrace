@@ -1,24 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertCircle, AlertTriangle, Info, CheckCircle2, Brain, ChevronRight, Lightbulb, Target, ChevronDown, ArrowRight } from 'lucide-react';
 import { Layout } from '../components/shared/Layout';
 import { Badge, severityToBadge } from '../components/ui/Badge';
 import type { Severity } from '../types';
 import { formatDate } from '../lib/utils';
-import { api } from '../services/api';
-import { useAuthStore } from '../stores/authStore';
-
-// Mapped gap shape from API
-interface ApiGap {
-  id: string;
-  description: string;
-  severity: Severity;
-  rootCause: string;
-  recommendation: string;
-  aiConfidence: number;
-  affectedArtifacts: string[];
-  createdAt: string;
-}
+import { useLatestAudit, useWorkspacePicker } from '../hooks/queries';
+import type { ApiGap } from '../types/api';
 
 const severityIcon: Record<Severity, React.ReactNode> = {
   CRITICAL: <AlertCircle size={15} className="text-critical" />,
@@ -131,7 +119,7 @@ function DiagnosticPanel({ gap }: DiagnosticPanelProps) {
             </div>
           </div>
           <span className="text-[10px] font-medium whitespace-nowrap shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }}>
-            {formatDate(gap.createdAt)}
+            {gap.createdAt ? formatDate(gap.createdAt) : '—'}
           </span>
         </div>
       </div>
@@ -206,61 +194,31 @@ type SeverityFilter = 'ALL' | Severity;
 
 export const DiagnosticsPage: React.FC = () => {
   const [selected, setSelected] = useState<ApiGap | null>(null);
-  const [gaps, setGaps] = useState<ApiGap[]>([]);
-  const [loading, setLoading] = useState(true);
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('ALL');
+  const {
+    workspaces,
+    selectedGroupId,
+    selectedGroup,
+    selectGroup,
+    isInitialLoad,
+  } = useWorkspacePicker({ preferGroupWithAudit: true });
+  const auditQuery = useLatestAudit(selectedGroupId);
 
-  interface WorkspaceAudit { gaps?: ApiGap[]; }
-  interface WorkspaceOption { id: string; name: string; projectTitle: string; auditResults?: WorkspaceAudit[]; }
-  const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
-  const [selectedGroupId, setSelectedGroupId] = useState<string>('');
-
-  const applyGaps = useCallback((nextGaps: ApiGap[]) => {
+  const gaps = useMemo(() => {
+    const raw = auditQuery.data?.gaps ?? selectedGroup?.auditResults?.[0]?.gaps ?? [];
     const severityOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-    const sorted = [...nextGaps].sort((a, b) => (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99));
-    setGaps(sorted);
-    setSelected((current) => current && sorted.some((gap) => gap.id === current.id) ? current : sorted[0] ?? null);
-  }, []);
+    return [...raw].sort((a, b) => (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99));
+  }, [auditQuery.data, selectedGroup]);
 
-  // Fetch all groups — prefer the group that has audit results
   useEffect(() => {
-    api.get('/api/projects')
-      .then((res) => {
-        const groups: WorkspaceOption[] = res.data.groups ?? [];
-        setWorkspaces(groups);
-        const activeGroupId = useAuthStore.getState().groupId;
-        const activeGroup = groups.find((g) => g.id === activeGroupId);
-        const withAudit = groups.find((g) => (g.auditResults?.length ?? 0) > 0);
-        const best = activeGroup && (activeGroup.auditResults?.length ?? 0) > 0
-          ? activeGroup
-          : withAudit ?? activeGroup ?? groups[0];
-        if (best) {
-          setSelectedGroupId(best.id);
-          applyGaps(best.auditResults?.[0]?.gaps ?? []);
-        }
-        setLoading(false);
-      })
-      .catch(() => { setLoading(false); });
-  }, [applyGaps]);
+    setSelected((current) => current && gaps.some((gap) => gap.id === current.id) ? current : gaps[0] ?? null);
+  }, [gaps]);
+
+  const loading = isInitialLoad && gaps.length === 0;
 
   const handleWorkspaceChange = (id: string) => {
-    setSelectedGroupId(id);
-    const cachedGaps = workspaces.find((ws) => ws.id === id)?.auditResults?.[0]?.gaps ?? [];
-    applyGaps(cachedGaps);
-    setLoading(cachedGaps.length === 0);
+    selectGroup(id);
   };
-
-  const fetchGaps = useCallback(async () => {
-    if (!selectedGroupId) { setLoading(false); return; }
-    try {
-      const res = await api.get(`/api/audit/${selectedGroupId}/latest`);
-      const result = res.data.auditResult;
-      applyGaps(result?.gaps ?? []);
-    } catch { /* no audit yet */ }
-    finally { setLoading(false); }
-  }, [applyGaps, selectedGroupId]);
-
-  useEffect(() => { fetchGaps(); }, [fetchGaps]);
 
   const counts = {
     CRITICAL: gaps.filter((g) => g.severity === 'CRITICAL').length,

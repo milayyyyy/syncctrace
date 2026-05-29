@@ -1,5 +1,6 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   LayoutGrid,
   FileText,
@@ -13,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
+import { prefetchRouteData } from '../../hooks/queries';
 
 const STUDENT_SECTIONS = [
   {
@@ -45,8 +47,9 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onClose }) => {
-  const { user, logout } = useAuthStore();
+  const { user, logout, groupId } = useAuthStore();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const sections = user?.role === 'FACULTY' ? FACULTY_SECTIONS : STUDENT_SECTIONS;
 
   const handleLogout = () => {
@@ -103,6 +106,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onClose }) => {
                   to={item.to}
                   end
                   onClick={handleNav}
+                  onMouseEnter={() => prefetchRouteData(qc, item.to, groupId)}
+                  onFocus={() => prefetchRouteData(qc, item.to, groupId)}
                   style={({ isActive }) => ({
                     display: 'flex',
                     alignItems: 'center',

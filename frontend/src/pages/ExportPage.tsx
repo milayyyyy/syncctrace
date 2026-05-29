@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { AlertCircle, CheckCircle2, Clock, Download, FileText, HardDrive, RefreshCw } from 'lucide-react';
 import { Layout } from '../components/shared/Layout';
 import { Card } from '../components/ui/Card';
@@ -6,38 +6,11 @@ import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
 import { ExportModal } from '../components/shared/ExportModal';
 import { api } from '../services/api';
-import { useAuthStore } from '../stores/authStore';
-import type { ExportFormat, ReadinessStatus } from '../types';
-import type { ExportAudit } from '../services/export';
-
-interface ApiAudit extends ExportAudit {
-  id: string;
-  readinessStatus: ReadinessStatus;
-  auditedAt: string;
-}
-
-interface ApiGroup {
-  id: string;
-  name: string;
-  projectTitle: string;
-  auditResults: ApiAudit[];
-}
-
-interface ExportJob {
-  id: string;
-  auditResultId: string;
-  format: ExportFormat;
-  fileUrl: string | null;
-  status: string;
-  createdAt: string;
-  completedAt: string | null;
-  auditResult?: {
-    group?: {
-      projectTitle: string;
-      name: string;
-    };
-  };
-}
+import type { ExportFormat } from '../types';
+import { useExportJobs, useInvalidateWorkspace, useWorkspacePicker } from '../hooks/queries';
+import { toExportAudit } from '../services/export';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../hooks/queries';
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString('en-US', {
@@ -48,70 +21,38 @@ function formatDate(iso: string): string {
   });
 }
 
-function statusLabel(status: ReadinessStatus): string {
+function statusLabel(status: string): string {
   return status.replaceAll('_', ' ').toLowerCase().replace(/^\w|\s\w/g, (m) => m.toUpperCase());
 }
 
 export const ExportPage: React.FC = () => {
-  const { groupId, setGroupId } = useAuthStore();
-  const [groups, setGroups] = useState<ApiGroup[]>([]);
-  const [selectedGroupId, setSelectedGroupId] = useState(groupId ?? '');
-  const [history, setHistory] = useState<ExportJob[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [historyLoading, setHistoryLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const invalidateWorkspace = useInvalidateWorkspace();
+  const {
+    workspaces: groups,
+    selectedGroupId,
+    selectedGroup,
+    selectGroup,
+    isInitialLoad: loading,
+    isError,
+  } = useWorkspacePicker();
+  const { data: history = [], isPending: historyLoading, refetch: refetchHistory } = useExportJobs();
   const [showExport, setShowExport] = useState(false);
+  const error = isError ? 'Could not load audit data. Please try again.' : null;
 
-  const fetchHistory = useCallback(async () => {
-    setHistoryLoading(true);
-    try {
-      const res = await api.get('/api/export');
-      setHistory(res.data.jobs ?? []);
-    } catch {
-      setHistory([]);
-    } finally {
-      setHistoryLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await api.get('/api/projects');
-        const fetched: ApiGroup[] = res.data.groups ?? [];
-        setGroups(fetched);
-        const nextGroupId = selectedGroupId || groupId || fetched[0]?.id || '';
-        setSelectedGroupId(nextGroupId);
-        if (nextGroupId) setGroupId(nextGroupId);
-      } catch {
-        setError('Could not load audit data. Please try again.');
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, [groupId, selectedGroupId, setGroupId]);
-
-  useEffect(() => { fetchHistory(); }, [fetchHistory]);
-
-  const selectedGroup = useMemo(
-    () => groups.find((g) => g.id === selectedGroupId) ?? groups[0],
-    [groups, selectedGroupId],
-  );
   const latestAudit = selectedGroup?.auditResults[0] ?? null;
   const projectTitle = selectedGroup?.projectTitle || selectedGroup?.name || 'Untitled Project';
 
   const handleExportComplete = async (format: ExportFormat) => {
-    if (!latestAudit) return;
+    if (!latestAudit?.id) return;
     await api.post('/api/export', { auditResultId: latestAudit.id, format });
-    await fetchHistory();
+    invalidateWorkspace(selectedGroupId);
+    void qc.invalidateQueries({ queryKey: queryKeys.exportJobs });
+    await refetchHistory();
   };
 
   const handleSelectGroup = (id: string) => {
-    setSelectedGroupId(id);
-    setGroupId(id);
+    selectGroup(id);
   };
 
   return (
@@ -158,7 +99,7 @@ export const ExportPage: React.FC = () => {
                     <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-widest mb-2">Current Audit</p>
                     <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">{projectTitle}</h2>
                     <p className="text-[12px] text-slate-400 font-medium mt-1">
-                      Audited {formatDate(latestAudit.auditedAt)}
+                      Audited {latestAudit.auditedAt ? formatDate(latestAudit.auditedAt) : '—'}
                     </p>
                   </div>
                   {groups.length > 1 && (
@@ -186,7 +127,7 @@ export const ExportPage: React.FC = () => {
                   <div className="rounded-2xl bg-slate-50 border border-slate-100 p-4">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Evidence</p>
                     <p className="text-[13px] font-extrabold text-slate-800 mt-2">
-                      {latestAudit.traceLinks.length} links, {latestAudit.gaps.length} gaps
+                      {(latestAudit.traceLinks?.length ?? 0)} links, {(latestAudit.gaps?.length ?? 0)} gaps
                     </p>
                   </div>
                 </div>
@@ -225,7 +166,7 @@ export const ExportPage: React.FC = () => {
                 <Clock size={15} className="text-gray-400" />
                 <h4 className="text-xs font-extrabold text-slate-600 uppercase tracking-widest">Recent Downloads</h4>
               </div>
-              <button type="button" onClick={fetchHistory} className="text-[11px] font-bold text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors">
+              <button type="button" onClick={() => void refetchHistory()} className="text-[11px] font-bold text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors">
                 <RefreshCw size={11} />
                 Refresh
               </button>
@@ -268,7 +209,7 @@ export const ExportPage: React.FC = () => {
       {showExport && latestAudit && (
         <ExportModal
           onClose={() => setShowExport(false)}
-          auditData={latestAudit}
+          auditData={toExportAudit(latestAudit)}
           projectTitle={projectTitle}
           onExportComplete={handleExportComplete}
         />

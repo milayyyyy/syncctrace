@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   FolderOpen, Activity, CheckCircle2, Circle, Users, Upload,
@@ -8,23 +8,8 @@ import {
 import { Layout } from '../components/shared/Layout';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { api } from '../services/api';
-import { useAuthStore } from '../stores/authStore';
+import { useWorkspacePicker } from '../hooks/queries';
 import type { ArtifactType } from '../types';
-
-/* ─── types ──────────────────────────────────────────────── */
-interface ApiMember   { id: string; name: string; email: string; role: string; avatarUrl: string | null; }
-interface ApiArtifact { id: string; type: ArtifactType; url: string; fileName: string | null; uploadedAt: string; }
-interface ApiAudit    { overallScore: number; readinessStatus: string; auditedAt: string; }
-interface ApiGroup {
-  id: string;
-  name: string;
-  projectTitle: string;
-  teamCode: string;
-  members: ApiMember[];
-  artifacts: ApiArtifact[];
-  auditResults: ApiAudit[];
-}
 
 /* ─── constants ──────────────────────────────────────────── */
 const ARTIFACTS: { key: ArtifactType; label: string }[] = [
@@ -91,29 +76,15 @@ function StatCard({ icon, label, value, sub, color }: {
 /* ─── page ───────────────────────────────────────────────── */
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
-  const { setGroupId } = useAuthStore();
-  const [groups, setGroups]       = useState<ApiGroup[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [selectedId, setSelectedId] = useState<string>('');
-
-  const fetchGroups = useCallback(async () => {
-    try {
-      const res = await api.get('/api/projects');
-      const fetched: ApiGroup[] = res.data.groups ?? [];
-      setGroups(fetched);
-      if (fetched.length > 0) {
-        setSelectedId(fetched[0].id);
-        setGroupId(fetched[0].id);
-      }
-    } catch { /* non-fatal */ }
-    finally { setLoading(false); }
-  }, [setGroupId]);
-
-  useEffect(() => { fetchGroups(); }, [fetchGroups]);
+  const {
+    workspaces: groups,
+    selectedGroupId: selectedId,
+    selectGroup,
+    isInitialLoad: loading,
+  } = useWorkspacePicker();
 
   const handleSelect = (id: string) => {
-    setSelectedId(id);
-    setGroupId(id);
+    selectGroup(id);
   };
 
   const group = groups.find((g) => g.id === selectedId) ?? groups[0];
@@ -182,7 +153,7 @@ export const DashboardPage: React.FC = () => {
     );
   }
 
-  const uploadedTypes  = new Set(group.artifacts.map((a) => a.type));
+  const uploadedTypes  = new Set((group.artifacts ?? []).map((a) => a.type));
   const uploadedCount  = uploadedTypes.size;
   const latest         = group.auditResults[0];
   const students       = group.members.filter((m) => m.role === 'STUDENT');
@@ -237,7 +208,7 @@ export const DashboardPage: React.FC = () => {
             icon={<Trophy size={20} />}
             label="Audit Score"
             value={latest ? `${latest.overallScore.toFixed(1)}%` : '—'}
-            sub={latest ? formatDate(latest.auditedAt) : 'Not audited yet'}
+            sub={latest?.auditedAt ? formatDate(latest.auditedAt) : 'Not audited yet'}
             color={latest ? scoreColor(latest.overallScore) : '#94a3b8'}
           />
           <StatCard
@@ -354,7 +325,7 @@ export const DashboardPage: React.FC = () => {
                 <div>
                   <p className="text-[13px] font-bold text-gray-900">Latest Audit</p>
                   <p className="text-[11px] text-gray-400">
-                    {latest ? formatDate(latest.auditedAt) : 'No audit run yet'}
+                    {latest?.auditedAt ? formatDate(latest.auditedAt) : 'No audit run yet'}
                   </p>
                 </div>
               </div>
