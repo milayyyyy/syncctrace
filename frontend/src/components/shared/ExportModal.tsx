@@ -161,15 +161,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, auditData, pr
               <div className="text-center">
                 <h4 className="text-[18px] font-black text-brand-navy tracking-tight">Export Successful</h4>
                 <p className="text-[12px] text-gray-500 font-medium mt-1 leading-relaxed">
-                  {format === 'PDF'
-                    ? 'Your report has been generated and can open in a new tab.'
-                    : `Your ${format} file has been generated and is ready for download.`}
+                  Your {format === 'PDF' ? 'PDF report' : `${format} file`} is ready. Click below to save it to your device.
                 </p>
               </div>
               {!isDownloaded && (
                 <button type="button" onClick={handleDownload} className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-brand-gold text-brand-navy text-[13px] font-black uppercase tracking-widest hover:bg-[#c9a227] transition-all shadow-lg active:scale-[0.98]">
                   <Download size={16} />
-                  {format === 'PDF' ? 'Open Print Dialog' : 'Download File'}
+                  {format === 'PDF' ? 'Download PDF' : format === 'CSV' ? 'Download CSV' : 'Download JSON'}
                 </button>
               )}
               {isDownloaded && (
@@ -177,9 +175,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ onClose, auditData, pr
                   <div className="shrink-0 w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
                     <CheckCircle2 size={16} className="text-emerald-600" />
                   </div>
-                  <p className="text-[11px] font-bold text-gray-600">
-                    {format === 'PDF' ? 'Report opened. Press Ctrl+P to save as PDF.' : 'Download started.'}
-                  </p>
+                  <p className="text-[11px] font-bold text-gray-600">Download complete. Check your downloads folder.</p>
                 </div>
               )}
             </div>

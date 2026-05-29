@@ -1,3 +1,4 @@
+import { jsPDF } from 'jspdf';
 import type { ExportFormat } from '../types';
 import type { ApiAudit } from '../types/api';
 
@@ -100,57 +101,130 @@ export function buildCsvBlob(auditData: ExportAudit, projectTitle: string): Blob
   return new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
+const PDF_MARGIN = 14;
+const PDF_LINE = 6;
+const PDF_PAGE_BOTTOM = 280;
+const PDF_TEXT_WIDTH = 182;
+
+function pdfEnsureSpace(doc: jsPDF, y: number, needed = PDF_LINE): number {
+  if (y + needed > PDF_PAGE_BOTTOM) {
+    doc.addPage();
+    return PDF_MARGIN + 4;
+  }
+  return y;
 }
 
-export function openPdfReport(auditData: ExportAudit, projectTitle: string): void {
+function pdfAddLines(doc: jsPDF, text: string, x: number, y: number, maxWidth = PDF_TEXT_WIDTH): number {
+  const lines = doc.splitTextToSize(text, maxWidth);
+  for (const line of lines) {
+    y = pdfEnsureSpace(doc, y);
+    doc.text(line, x, y);
+    y += PDF_LINE;
+  }
+  return y;
+}
+
+export function buildPdfBlob(auditData: ExportAudit, projectTitle: string): Blob {
+  const doc = new jsPDF();
   const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const linkRows = auditData.traceLinks
-    .map((l) => {
-      let c: string;
-      if (l.status === 'PASS') c = '#059669';
-      else if (l.status === 'WARN') c = '#D4AF37';
-      else c = '#B91C1C';
-      return `<tr><td>${escapeHtml(l.upstream.type)}</td><td>${escapeHtml(l.downstream.type)}</td><td>${l.alignmentScore.toFixed(1)}%</td><td style="color:${c};font-weight:700">${escapeHtml(l.status)}</td></tr>`;
-    })
-    .join('');
-  const gapRows = auditData.gaps
-    .map((g) => {
-      let c: string;
-      if (g.severity === 'CRITICAL') c = '#B91C1C';
-      else if (g.severity === 'HIGH') c = '#D97706';
-      else if (g.severity === 'MEDIUM') c = '#0284C7';
-      else c = '#059669';
-      return `<tr><td style="color:${c};font-weight:700">${escapeHtml(g.severity)}</td><td>${escapeHtml(g.description ?? '-')}</td><td>${escapeHtml(g.rootCause ?? '-')}</td></tr>`;
-    })
-    .join('');
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Audit Report - ${escapeHtml(projectTitle)}</title>
-<style>body{font-family:Arial,sans-serif;padding:40px;color:#1a1a1a}h1{color:#1E3A5F}h2{color:#1E3A5F;border-bottom:2px solid #D4AF37;padding-bottom:6px;margin-top:32px}table{width:100%;border-collapse:collapse;margin-top:12px}th{background:#1E3A5F;color:#fff;padding:10px;text-align:left}td{padding:8px 10px;border-bottom:1px solid #E2E8F0}tr:nth-child(even) td{background:#F8FAFC}.meta{background:#F1F5F9;padding:16px;border-radius:8px;margin-bottom:24px}.score{font-size:48px;font-weight:900;color:#1E3A5F;margin:8px 0}@media print{.no-print{display:none}}</style>
-</head><body>
-<h1>SyncTrace Audit Report</h1>
-<div class="meta"><p><strong>Project:</strong> ${escapeHtml(projectTitle)}</p><p><strong>Exported:</strong> ${date}</p><p><strong>Status:</strong> ${escapeHtml(auditData.readinessStatus.replaceAll('_', ' '))}</p><div class="score">${auditData.overallScore.toFixed(1)}%</div><p style="color:#64748B;margin:0">Overall Alignment Score</p></div>
-<h2>Traceability Matrix</h2><table><thead><tr><th>Upstream</th><th>Downstream</th><th>Alignment Score</th><th>Status</th></tr></thead><tbody>${linkRows}</tbody></table>
-<h2>Identified Gaps</h2><table><thead><tr><th>Severity</th><th>Description</th><th>Root Cause</th></tr></thead><tbody>${gapRows}</tbody></table>
-<script>window.onload=function(){window.print();}</` + `script>
-</body></html>`;
-  const blob = new Blob([html], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank');
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  let y = PDF_MARGIN;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.setTextColor(30, 58, 95);
+  doc.text('SyncTrace Audit Report', PDF_MARGIN, y);
+  y += 12;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.setTextColor(30, 41, 59);
+  y = pdfAddLines(doc, `Project: ${projectTitle}`, PDF_MARGIN, y);
+  y = pdfAddLines(doc, `Exported: ${date}`, PDF_MARGIN, y);
+  y = pdfAddLines(doc, `Status: ${auditData.readinessStatus.replaceAll('_', ' ')}`, PDF_MARGIN, y);
+  y += 4;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(28);
+  doc.setTextColor(30, 58, 95);
+  y = pdfEnsureSpace(doc, y, 14);
+  doc.text(`${auditData.overallScore.toFixed(1)}%`, PDF_MARGIN, y);
+  y += 10;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Overall alignment score', PDF_MARGIN, y);
+  y += 14;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(30, 58, 95);
+  y = pdfEnsureSpace(doc, y, 10);
+  doc.text('Traceability matrix', PDF_MARGIN, y);
+  y += 8;
+
+  doc.setFontSize(10);
+  for (const link of auditData.traceLinks) {
+    y = pdfEnsureSpace(doc, y, PDF_LINE * 2);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 58, 95);
+    doc.text(`${link.upstream.type} → ${link.downstream.type}`, PDF_MARGIN, y);
+    y += PDF_LINE;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Score: ${link.alignmentScore.toFixed(1)}%   Status: ${link.status}`, PDF_MARGIN + 4, y);
+    y += PDF_LINE + 2;
+  }
+
+  y += 4;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(30, 58, 95);
+  y = pdfEnsureSpace(doc, y, 10);
+  doc.text('Identified gaps', PDF_MARGIN, y);
+  y += 8;
+
+  if (auditData.gaps.length === 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    y = pdfAddLines(doc, 'No gaps were identified in this audit.', PDF_MARGIN, y);
+  } else {
+    auditData.gaps.forEach((gap, index) => {
+      y = pdfEnsureSpace(doc, y, PDF_LINE * 4);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(30, 58, 95);
+      doc.text(`${index + 1}. [${gap.severity}]`, PDF_MARGIN, y);
+      y += PDF_LINE;
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(51, 65, 85);
+      y = pdfAddLines(doc, gap.description ?? '-', PDF_MARGIN + 2, y);
+      if (gap.rootCause) {
+        y = pdfEnsureSpace(doc, y);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(100, 116, 139);
+        y = pdfAddLines(doc, `Cause: ${gap.rootCause}`, PDF_MARGIN + 2, y);
+      }
+      if (gap.recommendation) {
+        y = pdfEnsureSpace(doc, y);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(5, 150, 105);
+        y = pdfAddLines(doc, `Fix: ${gap.recommendation}`, PDF_MARGIN + 2, y);
+      }
+      y += 4;
+    });
+  }
+
+  return doc.output('blob');
 }
 
 export function exportAuditReport(auditData: ExportAudit, projectTitle: string, format: ExportFormat): void {
+  const filename = exportFilename(projectTitle, format);
   if (format === 'JSON') {
-    triggerBlobDownload(buildJsonBlob(auditData, projectTitle), exportFilename(projectTitle, format));
+    triggerBlobDownload(buildJsonBlob(auditData, projectTitle), filename);
   } else if (format === 'CSV') {
-    triggerBlobDownload(buildCsvBlob(auditData, projectTitle), exportFilename(projectTitle, format));
+    triggerBlobDownload(buildCsvBlob(auditData, projectTitle), filename);
   } else {
-    openPdfReport(auditData, projectTitle);
+    triggerBlobDownload(buildPdfBlob(auditData, projectTitle), filename);
   }
 }
